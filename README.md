@@ -35,6 +35,7 @@ git rm -r --cached venv/
 FastAPI_handson/
 ├── main.py
 ├── path_parameters.py
+├── query_parameters.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -87,3 +88,63 @@ curl http://localhost:8000/users/me
 # Dynamic user route
 curl http://localhost:8000/users/john
 ```
+
+## Lesson 3: Query Parameters
+
+### Overview
+- Understanding query parameters in FastAPI
+- Default values and optional parameters
+- Combining path and query parameters
+- Type validation for query parameters
+- URL encoding and parameter parsing
+
+### File: `query_parameters.py`
+
+This lesson demonstrates how to use query parameters in FastAPI endpoints for filtering, pagination, and optional functionality.
+
+### Key Concepts Covered
+1. **Basic Query Parameters**: Using optional parameters with default values
+2. **Parameter Combination**: Mixing path and query parameters in one endpoint
+3. **Type Validation**: Automatic conversion and validation of query parameter types
+4. **Optional Parameters**: Using `Union[str, None]` for optional string parameters
+5. **URL Encoding**: How FastAPI handles special characters in URLs
+
+### Running the Application
+```bash
+fastapi dev query_parameters.py
+```
+
+### Endpoints
+- `GET /items/` - Pagination with skip and limit query parameters
+- `GET /items/{item_id}` - Item retrieval with optional search query
+
+### Example Usage
+```bash
+# Basic pagination (uses defaults)
+curl http://localhost:8000/items/
+
+# Custom pagination parameters
+curl http://localhost:8000/items/?skip=5&limit=20
+
+# Single parameter
+curl http://localhost:8000/items/?skip=10
+
+# Item with optional query
+curl http://localhost:8000/items/42
+
+# Item with search query
+curl http://localhost:8000/items/42?q=search
+
+# Query with spaces (URL encoded)
+curl "http://localhost:8000/items/42?q=hello%20world"
+
+# Invalid item_id (returns 422)
+curl http://localhost:8000/items/abc?q=test
+```
+
+### Query Parameter Features
+- **Default Values**: Parameters have sensible defaults when not provided
+- **Type Safety**: Automatic validation and conversion (int, str, bool, etc.)
+- **Optional Parameters**: Can be omitted entirely from the request
+- **Multiple Parameters**: Combine multiple query parameters with `&`
+- **URL Encoding**: Special characters are automatically decoded
