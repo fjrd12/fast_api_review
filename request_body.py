@@ -97,7 +97,7 @@ async def create_item(item: Item) -> Item:
     return item
 
 
-@app.put("/items/{item_id}")
+@app.post("/items/{item_id}")
 async def update_item(item_id: int, item: Item) -> dict:
     """
     Update an existing item by ID.
@@ -117,7 +117,7 @@ async def update_item(item_id: int, item: Item) -> dict:
         422 Validation Error: If item_id is not an integer or request body is invalid
         
     Example Request:
-        PUT /items/123
+        POSt /items/123
         Content-Type: application/json
         
         {

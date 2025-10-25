@@ -37,6 +37,7 @@ FastAPI_handson/
 ├── path_parameters.py
 ├── query_parameters.py
 ├── request_body.py
+├── query_param_and_string_val.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -235,3 +236,90 @@ curl -X POST "http://localhost:8000/items/" \
 - **Optional Fields**: Fields can be omitted and will use default values
 - **Type Conversion**: Automatic conversion between compatible types
 - **Model Serialization**: Easy conversion from models to dictionaries
+
+## Lesson 5: Query Parameter Validation and String Validation
+
+### Overview
+- Advanced query parameter validation using Query class
+- String length constraints and validation rules
+- Numeric parameter constraints (min/max values)
+- Required vs optional parameters with custom validation
+- Search functionality with list comprehensions
+- Parameter descriptions for auto-generated API documentation
+
+### File: `query_param_and_string_val.py`
+
+This lesson demonstrates advanced query parameter validation techniques using FastAPI's Query class for robust input validation and search functionality.
+
+### Key Concepts Covered
+1. **Query Class**: Using `Query()` for advanced parameter validation
+2. **String Constraints**: Setting min_length and max_length for string parameters
+3. **Numeric Constraints**: Using ge (>=) and le (<=) for numeric validation
+4. **Required Parameters**: Making query parameters mandatory
+5. **Parameter Descriptions**: Adding documentation for auto-generated API docs
+6. **List Comprehensions**: Efficient data filtering and search implementation
+7. **Case-insensitive Search**: Practical search functionality
+
+### Running the Application
+```bash
+fastapi dev query_param_and_string_val.py
+```
+
+### Endpoints
+- `GET /items/` - Basic search with optional query parameter (max 50 chars)
+- `GET /items/search/` - Advanced search with required query (3-50 chars) and result limiting
+
+### Sample Data
+```json
+[
+    {"item_name": "Foo"},
+    {"item_name": "Bar"},
+    {"item_name": "Baz"}
+]
+```
+
+### Example Usage
+```bash
+# Basic search - optional query
+curl http://localhost:8000/items/
+curl http://localhost:8000/items/?q=foo
+curl http://localhost:8000/items/?q=ba
+
+# Advanced search - required query with constraints
+curl http://localhost:8000/items/search/?q=foo
+curl http://localhost:8000/items/search/?q=bar&limit=1
+
+# Validation errors
+curl http://localhost:8000/items/?q=verylongquerystringthatexceedsfiftycharacterslimit  # 422 Error
+curl http://localhost:8000/items/search/?q=ab  # 422 Error (too short)
+curl http://localhost:8000/items/search/?q=foo&limit=0  # 422 Error (below minimum)
+curl http://localhost:8000/items/search/?q=foo&limit=150  # 422 Error (above maximum)
+curl http://localhost:8000/items/search/  # 422 Error (missing required parameter)
+```
+
+### Query Parameter Validation Features
+
+#### Basic Search (`/items/`):
+- **q parameter**: Optional string with max_length=50
+- **Default behavior**: Returns empty array if no query provided
+- **Validation**: 422 error if query exceeds 50 characters
+
+#### Advanced Search (`/items/search/`):
+- **q parameter**: Required string with min_length=3, max_length=50
+- **limit parameter**: Integer with ge=1, le=100, default=10
+- **Descriptions**: Both parameters have documentation descriptions
+- **Strict validation**: More robust input checking
+
+### Search Implementation Features
+- **Case-insensitive matching**: Search works with any case combination
+- **Partial matching**: Finds items containing the search string (substring search)
+- **List comprehensions**: Efficient filtering using Python list comprehensions
+- **Result limiting**: Pagination support with configurable limits
+- **Empty result handling**: Graceful handling of no matches found
+
+### Validation Constraints Summary
+| Parameter | Type | Min Length | Max Length | Min Value | Max Value | Required | Default |
+|-----------|------|------------|------------|-----------|-----------|----------|---------|
+| q (basic) | str  | -          | 50         | -         | -         | No       | None    |
+| q (search)| str  | 3          | 50         | -         | -         | Yes      | -       |
+| limit     | int  | -          | -          | 1         | 100       | No       | 10      |
