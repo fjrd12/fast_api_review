@@ -36,6 +36,7 @@ FastAPI_handson/
 ├── main.py
 ├── path_parameters.py
 ├── query_parameters.py
+├── request_body.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -148,3 +149,89 @@ curl http://localhost:8000/items/abc?q=test
 - **Optional Parameters**: Can be omitted entirely from the request
 - **Multiple Parameters**: Combine multiple query parameters with `&`
 - **URL Encoding**: Special characters are automatically decoded
+
+## Lesson 4: Request Bodies
+
+### Overview
+- Understanding request bodies in FastAPI
+- Pydantic models for data validation
+- POST and PUT operations with structured data
+- Combining path parameters with request bodies
+- Dictionary unpacking with model_dump()
+
+### File: `request_body.py`
+
+This lesson demonstrates how to handle structured data sent in request bodies using Pydantic models for automatic validation and serialization.
+
+### Key Concepts Covered
+1. **Pydantic Models**: Using BaseModel for data structure and validation
+2. **Request Body Handling**: Receiving JSON data in POST/PUT requests
+3. **Type Validation**: Automatic validation of complex data structures
+4. **Optional Fields**: Using Union types with default values
+5. **Model Serialization**: Converting models to dictionaries with model_dump()
+6. **Dictionary Unpacking**: Using ** operator to merge data structures
+
+### Running the Application
+```bash
+fastapi dev request_body.py
+```
+
+### Endpoints
+- `POST /items/` - Create a new item with request body validation
+- `PUT /items/{item_id}` - Update an item combining path parameter and request body
+
+### Data Model
+```json
+{
+    "name": "string (required)",
+    "description": "string or null (optional)",
+    "price": "float (required)",
+    "tax": "float or null (optional)"
+}
+```
+
+### Example Usage
+```bash
+# Create item with all fields
+curl -X POST "http://localhost:8000/items/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Laptop",
+    "description": "Gaming laptop",
+    "price": 999.99,
+    "tax": 99.99
+  }'
+
+# Create item with only required fields
+curl -X POST "http://localhost:8000/items/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Mouse",
+    "price": 29.99
+  }'
+
+# Update item (combines path param + body)
+curl -X PUT "http://localhost:8000/items/123" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Updated Laptop",
+    "description": "High-end gaming laptop",
+    "price": 1299.99,
+    "tax": 129.99
+  }'
+
+# Invalid request (missing required field)
+curl -X POST "http://localhost:8000/items/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "No name provided"
+  }'
+```
+
+### Request Body Features
+- **Automatic Validation**: Pydantic validates data types and required fields
+- **JSON Parsing**: FastAPI automatically parses JSON request bodies
+- **Error Messages**: Detailed validation errors for invalid data (422 status)
+- **Optional Fields**: Fields can be omitted and will use default values
+- **Type Conversion**: Automatic conversion between compatible types
+- **Model Serialization**: Easy conversion from models to dictionaries
