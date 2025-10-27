@@ -117,7 +117,7 @@ async def update_item(item_id: int, item: Item) -> dict:
         422 Validation Error: If item_id is not an integer or request body is invalid
         
     Example Request:
-        POSt /items/123
+        POST /items/123
         Content-Type: application/json
         
         {

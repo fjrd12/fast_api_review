@@ -38,6 +38,7 @@ FastAPI_handson/
 ├── query_parameters.py
 ├── request_body.py
 ├── query_param_and_string_val.py
+├── path_validations.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -323,3 +324,89 @@ curl http://localhost:8000/items/search/  # 422 Error (missing required paramete
 | q (basic) | str  | -          | 50         | -         | -         | No       | None    |
 | q (search)| str  | 3          | 50         | -         | -         | Yes      | -       |
 | limit     | int  | -          | -          | 1         | 100       | No       | 10      |
+
+## Lesson 6: Path Parameter Validation
+
+### Overview
+- Advanced path parameter validation using Path class
+- Numeric constraints for path parameters (ge, le)
+- Combining path and query parameter validations
+- Adding metadata and descriptions to path parameters
+- Understanding parameter order and precedence
+
+### File: `path_validations.py`
+
+This lesson demonstrates how to add validation constraints and metadata to path parameters using FastAPI's Path class for robust URL parameter validation.
+
+### Key Concepts Covered
+1. **Path Class**: Using `Path()` for advanced path parameter validation
+2. **Numeric Constraints**: Setting ge (>=) and le (<=) for numeric path parameters
+3. **Parameter Metadata**: Adding title and description for documentation
+4. **Combined Validation**: Using both Path and Query validations together
+5. **Parameter Order**: Understanding how FastAPI evaluates parameters
+6. **API Documentation**: How metadata improves auto-generated docs
+
+### Running the Application
+```bash
+fastapi dev path_validations.py
+```
+
+### Endpoints
+- `GET /items/{item_id}` - Basic path parameter with ge=1 constraint
+- `GET /items/{item_id}/details` - Combined path (1-1000) and query validation
+- `GET /users/{user_id}` - Path parameter with title and description metadata
+
+### Example Usage
+```bash
+# Basic path validation - item_id must be >= 1
+curl http://localhost:8000/items/1
+curl http://localhost:8000/items/999
+
+# Combined path and query validation
+curl http://localhost:8000/items/500/details
+curl http://localhost:8000/items/500/details?q=search
+
+# User endpoint with metadata
+curl http://localhost:8000/users/123
+
+# Validation errors
+curl http://localhost:8000/items/0           # 422 Error (item_id < 1)
+curl http://localhost:8000/items/-5          # 422 Error (negative number)
+curl http://localhost:8000/items/1001/details # 422 Error (item_id > 1000)
+curl http://localhost:8000/users/0           # 422 Error (user_id < 1)
+```
+
+### Path Parameter Validation Features
+
+#### Basic Path Validation (`/items/{item_id}`):
+- **item_id**: Integer with ge=1 (must be >= 1)
+- **Error handling**: 422 validation error for invalid values
+- **Simple constraint**: Demonstrates basic numeric validation
+
+#### Combined Validation (`/items/{item_id}/details`):
+- **item_id**: Integer with ge=1, le=1000 (range 1-1000)
+- **q**: Optional query string with max_length=50
+- **Description**: Path parameter includes documentation description
+- **Multiple constraints**: Shows how to combine different validation types
+
+#### Metadata Example (`/users/{user_id}`):
+- **user_id**: Integer with ge=1
+- **title**: "User ID" for documentation
+- **description**: Detailed explanation of the parameter
+- **Documentation**: Enhances auto-generated API docs
+
+### Path Validation Constraints
+| Endpoint | Parameter | Type | Min Value | Max Value | Required | Metadata |
+|----------|-----------|------|-----------|-----------|----------|----------|
+| `/items/{item_id}` | item_id | int | 1 | - | Yes | None |
+| `/items/{item_id}/details` | item_id | int | 1 | 1000 | Yes | Description |
+| `/users/{user_id}` | user_id | int | 1 | - | Yes | Title + Description |
+
+### Key Learning Points
+- **Path parameters are always required** (unlike query parameters)
+- **Validation happens before the function executes**
+- **Invalid path parameters return 422 Validation Error**
+- **Metadata improves API documentation quality**
+- **ge/le constraints work with any numeric type**
+- **Path evaluation occurs before query parameter processing**
+- **Combining Path and Query validations provides comprehensive input validation**
