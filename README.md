@@ -39,6 +39,7 @@ FastAPI_handson/
 ├── request_body.py
 ├── query_param_and_string_val.py
 ├── path_validations.py
+├── 7bodymultipleparameters.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -410,3 +411,178 @@ curl http://localhost:8000/users/0           # 422 Error (user_id < 1)
 - **ge/le constraints work with any numeric type**
 - **Path evaluation occurs before query parameter processing**
 - **Combining Path and Query validations provides comprehensive input validation**
+
+## Lesson 7: Multiple Body Parameters
+
+### Overview
+- Advanced request body handling with multiple Pydantic models
+- Mixing path, query, and body parameters in complex scenarios
+- Singular values in request body using Body()
+- Multiple body parameters with validation constraints
+- Body embedding techniques for consistent JSON structure
+
+### File: `7bodymultipleparameters.py`
+
+This lesson demonstrates the most advanced FastAPI request handling techniques, showing how to combine multiple body parameters, path parameters, and query parameters in sophisticated ways.
+
+### Key Concepts Covered
+1. **Mixed Parameter Types**: Combining path, query, and body parameters
+2. **Multiple Body Parameters**: Using multiple Pydantic models in one endpoint
+3. **Singular Body Values**: Including scalar values in request body with Body()
+4. **Complex Validation**: Multiple body parameters with constraints and queries
+5. **Body Embedding**: Using Body(embed=True) for consistent JSON structure
+
+### Running the Application
+```bash
+fastapi dev 7bodymultipleparameters.py
+```
+
+### Pydantic Models
+```python
+class Item(BaseModel):
+    name: str
+    description: Union[str, None] = None
+    price: float
+    tax: Union[float, None] = None
+
+class User(BaseModel):
+    username: str
+    full_name: Union[str, None] = None
+```
+
+### Endpoints
+
+#### 1. Mixed Parameters (`PUT /items/{item_id}/basic`)
+- **Path**: item_id (0-1000) with validation
+- **Query**: q (optional string)
+- **Body**: item (optional Item model)
+
+#### 2. Multiple Body Parameters (`PUT /items/{item_id}`)
+- **Path**: item_id
+- **Body**: Both Item and User models
+
+#### 3. Singular Body Values (`PUT /items/{item_id}/importance`)
+- **Path**: item_id
+- **Body**: Item model, User model, and importance (integer)
+
+#### 4. Full Parameter Mix (`PUT /items/{item_id}/full`)
+- **Path**: item_id
+- **Body**: Item, User, importance (>0 validation)
+- **Query**: q (optional)
+
+#### 5. Embedded Body (`PUT /items/{item_id}/embed`)
+- **Path**: item_id
+- **Body**: Item model with embed=True
+
+### Example Usage
+
+#### Mixed Parameters
+```bash
+curl -X PUT "http://localhost:8000/items/123/basic?q=search" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Laptop",
+    "price": 999.99
+  }'
+```
+
+#### Multiple Body Parameters
+```bash
+curl -X PUT "http://localhost:8000/items/456" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "item": {
+      "name": "Gaming Mouse",
+      "price": 59.99,
+      "tax": 5.99
+    },
+    "user": {
+      "username": "john_doe",
+      "full_name": "John Doe"
+    }
+  }'
+```
+
+#### Singular Body Values
+```bash
+curl -X PUT "http://localhost:8000/items/789/importance" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "item": {
+      "name": "Mechanical Keyboard",
+      "price": 149.99
+    },
+    "user": {
+      "username": "jane_smith"
+    },
+    "importance": 8
+  }'
+```
+
+#### Full Parameter Mix with Validation
+```bash
+curl -X PUT "http://localhost:8000/items/999/full?q=urgent" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "item": {
+      "name": "Monitor",
+      "description": "4K Gaming Monitor",
+      "price": 399.99,
+      "tax": 40.00
+    },
+    "user": {
+      "username": "admin",
+      "full_name": "System Administrator"
+    },
+    "importance": 10
+  }'
+```
+
+#### Embedded Body
+```bash
+curl -X PUT "http://localhost:8000/items/111/embed" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "item": {
+      "name": "Wireless Headphones",
+      "description": "Noise-cancelling headphones",
+      "price": 199.99,
+      "tax": 20.00
+    }
+  }'
+```
+
+### Request Body Structure Variations
+
+| Endpoint | Structure | Key Feature |
+|----------|-----------|-------------|
+| `/basic` | Optional root-level item | Mixed optional parameters |
+| Base endpoint | `{"item": {...}, "user": {...}}` | Multiple body models |
+| `/importance` | `{"item": {...}, "user": {...}, "importance": 8}` | Scalar in body |
+| `/full` | Same as importance + query param | Full parameter mix |
+| `/embed` | `{"item": {...}}` | Single model embedded |
+
+### Advanced Features Demonstrated
+
+#### Union Types for Optional Fields
+- **`Union[str, None]`**: Fields that can be string or null
+- **Default values**: Using `= None` for optional fields
+- **Flexible APIs**: Supporting partial data updates
+
+#### Body() Function Usage
+- **Scalar values**: Including simple types in request body
+- **Validation**: Adding constraints like `Body(gt=0)`
+- **Embedding**: Using `Body(embed=True)` for structure consistency
+
+#### Parameter Mixing Best Practices
+- **Order independence**: FastAPI handles parameter detection automatically
+- **Type safety**: Full validation across all parameter types
+- **Documentation**: Auto-generated docs show complete request structure
+
+### Validation and Error Handling
+- **422 Validation Errors**: For invalid data types or constraint violations
+- **Required fields**: Missing required fields in models
+- **Constraint validation**: Body(gt=0) and other constraints
+- **Type conversion**: Automatic conversion where possible
+
+This lesson represents the most sophisticated request handling in FastAPI, combining all parameter types with advanced validation and flexible JSON structures!
