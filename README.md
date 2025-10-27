@@ -41,6 +41,7 @@ FastAPI_handson/
 ├── path_validations.py
 ├── 7bodymultipleparameters.py
 ├── 8body_fields.py
+├── 9bodynetedmodels.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -769,3 +770,235 @@ bio: Union[str, None] = Field(
 - **Field validation is reusable** across multiple endpoints using the same model
 - **Combines perfectly with Body embedding** for consistent JSON structure
 - **Supports all standard validation patterns** needed in real-world APIs
+
+## Lesson 9: Body Nested Models
+
+### Overview
+- Complex nested data structures with Pydantic models
+- Models within models for hierarchical data
+- Collections of nested models (lists, sets, dictionaries)
+- HttpUrl validation for URL fields
+- Real-world patterns for sophisticated API design
+- Handling complex relationships between data entities
+
+### File: `9bodynetedmodels.py`
+
+This lesson demonstrates how to create and handle complex nested data structures using Pydantic models, enabling sophisticated API designs that mirror real-world data relationships.
+
+### Key Concepts Covered
+1. **Nested Models**: Models containing other models as fields
+2. **Collections of Models**: Lists and sets of nested models
+3. **Dictionary Types**: Key-value mappings with type constraints
+4. **URL Validation**: HttpUrl type for proper URL validation
+5. **Complex Validation**: Nested validation throughout the hierarchy
+6. **Real-World Patterns**: Product catalogs, image galleries, configuration data
+
+### Running the Application
+```bash
+fastapi dev 9bodynetedmodels.py
+```
+
+### Pydantic Models Structure
+
+#### Image Model (Nested Component)
+```python
+class Image(BaseModel):
+    url: HttpUrl      # Validated URL format
+    name: str         # Image display name
+```
+
+#### Item Model (Single Nested)
+```python
+class Item(BaseModel):
+    name: str                           # Required item name
+    description: Union[str, None] = None # Optional description
+    price: float                        # Required price
+    tax: Union[float, None] = None      # Optional tax
+    tags: Set[str] = set()             # Unique tags (no duplicates)
+    image: Union[Image, None] = None    # Optional single image
+```
+
+#### ItemWithImages Model (List of Nested)
+```python
+class ItemWithImages(BaseModel):
+    name: str                           # Required item name
+    description: Union[str, None] = None # Optional description
+    price: float                        # Required price
+    tax: Union[float, None] = None      # Optional tax
+    tags: Set[str] = set()             # Unique tags
+    images: List[Image] = []            # List of images (can be empty)
+```
+
+### Endpoints
+
+#### 1. Single Nested Model (`PUT /items/{item_id}`)
+- **Purpose**: Handle item with optional single image
+- **Model**: Item with optional Image nested model
+- **Use Case**: Products with primary image
+
+#### 2. List of Nested Models (`PUT /items/{item_id}/images`)
+- **Purpose**: Handle item with multiple images
+- **Model**: ItemWithImages with list of Image models
+- **Use Case**: Product galleries, multi-image documentation
+
+#### 3. Dictionary Types (`POST /index-weights/`)
+- **Purpose**: Handle key-value mappings
+- **Type**: Dict[int, float] for index weights
+- **Use Case**: Rankings, priorities, configuration values
+
+### Example Usage
+
+#### Single Nested Model
+```bash
+curl -X PUT "http://localhost:8000/items/123" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Gaming Laptop",
+    "description": "High-performance gaming laptop with RTX graphics",
+    "price": 1299.99,
+    "tax": 130.00,
+    "tags": ["gaming", "laptop", "electronics"],
+    "image": {
+      "url": "https://example.com/laptop.jpg",
+      "name": "Gaming Laptop Photo"
+    }
+  }'
+```
+
+#### Multiple Nested Models
+```bash
+curl -X PUT "http://localhost:8000/items/456/images" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Gaming Setup Bundle",
+    "description": "Complete gaming setup with multiple components",
+    "price": 2499.99,
+    "tax": 250.00,
+    "tags": ["gaming", "bundle", "setup"],
+    "images": [
+      {
+        "url": "https://example.com/setup-front.jpg",
+        "name": "Front View"
+      },
+      {
+        "url": "https://example.com/setup-side.jpg",
+        "name": "Side View"
+      },
+      {
+        "url": "https://example.com/components.jpg",
+        "name": "Individual Components"
+      }
+    ]
+  }'
+```
+
+#### Dictionary Types
+```bash
+curl -X POST "http://localhost:8000/index-weights/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "1": 0.8,
+    "2": 1.2,
+    "5": 0.5,
+    "10": 2.0,
+    "15": 1.5
+  }'
+```
+
+### Data Structure Features
+
+#### Collection Types
+| Type | Purpose | Features | Example Use Case |
+|------|---------|----------|------------------|
+| `Set[str]` | Unique values | Auto-deduplication | Product tags, categories |
+| `List[Model]` | Ordered collection | Maintains sequence | Image galleries, steps |
+| `Dict[int, float]` | Key-value mapping | Type-validated pairs | Rankings, weights |
+
+#### Validation Features
+- **Nested Validation**: Each nested model fully validated
+- **URL Validation**: HttpUrl ensures proper URL format
+- **Type Conversion**: Automatic conversion where possible
+- **Set Deduplication**: Duplicate tags automatically removed
+- **Order Preservation**: Lists maintain item sequence
+
+### Advanced Validation Examples
+
+#### Valid Requests
+```json
+// Minimal required fields
+{
+  "name": "Simple Item",
+  "price": 29.99
+}
+
+// With all optional fields
+{
+  "name": "Complete Item",
+  "description": "Full featured item",
+  "price": 99.99,
+  "tax": 10.00,
+  "tags": ["featured", "popular"],
+  "image": {
+    "url": "https://example.com/item.jpg",
+    "name": "Item Photo"
+  }
+}
+```
+
+#### Validation Errors (422)
+```bash
+# Invalid URL format
+{
+  "name": "Item",
+  "price": 99.99,
+  "image": {
+    "url": "not-a-valid-url",  # ❌ Invalid URL
+    "name": "Photo"
+  }
+}
+
+# Missing required nested fields
+{
+  "name": "Item",
+  "price": 99.99,
+  "image": {
+    "url": "https://example.com/photo.jpg"
+    # ❌ Missing required "name" field in Image
+  }
+}
+
+# Invalid dictionary types
+{
+  "abc": 1.0,     # ❌ Key not convertible to int
+  "1": "invalid"  # ❌ Value not convertible to float
+}
+```
+
+### Real-World Use Cases
+
+#### E-commerce Applications
+- **Product Catalogs**: Items with image galleries
+- **Category Management**: Nested category structures
+- **Inventory Systems**: Complex product relationships
+
+#### Content Management
+- **Article Systems**: Posts with media attachments
+- **Documentation**: Pages with multiple screenshots
+- **Portfolio Sites**: Projects with image collections
+
+#### Configuration Systems
+- **Settings Management**: Hierarchical configuration
+- **User Preferences**: Complex preference structures
+- **System Configurations**: Nested parameter sets
+
+### Key Learning Points
+- **Nested models enable complex data relationships** while maintaining validation
+- **Collections (List, Set, Dict) handle multiple related objects** efficiently
+- **HttpUrl provides built-in URL validation** for web resource fields
+- **Validation cascades through the entire hierarchy** automatically
+- **Real-world APIs often require nested structures** for meaningful data representation
+- **Pydantic handles complex type conversion** and validation seamlessly
+- **Error messages pinpoint exact validation failures** in nested structures
+- **Performance remains excellent** even with deep nesting and large collections
+
+This lesson demonstrates enterprise-level API design patterns essential for building sophisticated applications that handle complex, real-world data relationships!
