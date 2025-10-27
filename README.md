@@ -40,6 +40,7 @@ FastAPI_handson/
 ├── query_param_and_string_val.py
 ├── path_validations.py
 ├── 7bodymultipleparameters.py
+├── 8body_fields.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -586,3 +587,185 @@ curl -X PUT "http://localhost:8000/items/111/embed" \
 - **Type conversion**: Automatic conversion where possible
 
 This lesson represents the most sophisticated request handling in FastAPI, combining all parameter types with advanced validation and flexible JSON structures!
+
+## Lesson 8: Body Fields Validation
+
+### Overview
+- Advanced Pydantic field validation using Field() function
+- Adding validation constraints and metadata to model attributes
+- Numeric constraints (gt, ge, lt, le) for number fields
+- String constraints (max_length, min_length) for text fields
+- Field metadata for enhanced API documentation
+- Combining Field validation with Body embedding
+
+### File: `8body_fields.py`
+
+This lesson demonstrates how to add fine-grained validation and documentation to individual fields within Pydantic models using the Field() function for precise data validation control.
+
+### Key Concepts Covered
+1. **Pydantic Field() Function**: Advanced field-level validation and metadata
+2. **Numeric Constraints**: Using gt, ge, lt, le for number validation
+3. **String Constraints**: Setting max_length, min_length for text fields
+4. **Field Metadata**: Adding title and description for documentation
+5. **Validation Integration**: How Field validation works with FastAPI
+6. **Body Embedding**: Combining Field validation with Body(embed=True)
+
+### Running the Application
+```bash
+fastapi dev 8body_fields.py
+```
+
+### Pydantic Model with Field Validation
+```python
+class Item(BaseModel):
+    name: str  # Simple required field
+    description: Union[str, None] = Field(
+        default=None, 
+        title="The description of the item", 
+        max_length=300
+    )
+    price: float = Field(
+        gt=0, 
+        description="The price must be greater than zero"
+    )
+    tax: Union[float, None] = None  # Optional, no validation
+```
+
+### Endpoint
+- `PUT /items/{item_id}` - Update item with Field-validated request body
+
+### Field Validation Features
+
+#### Field Constraints
+| Field | Type | Constraints | Metadata | Purpose |
+|-------|------|-------------|----------|---------|
+| name | str | None | None | Simple required field |
+| description | str\|None | max_length=300 | Custom title | Optional with length limit |
+| price | float | gt=0 | Custom description | Required positive number |
+| tax | float\|None | None | None | Optional, no validation |
+
+#### Validation Types
+- **gt=0**: Greater than zero (price must be positive)
+- **max_length=300**: Maximum string length (description limit)
+- **default=None**: Default value for optional fields
+- **title/description**: Metadata for API documentation
+
+### Example Usage
+
+#### Valid Request
+```bash
+curl -X PUT "http://localhost:8000/items/123" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "item": {
+      "name": "Gaming Laptop",
+      "description": "High-end gaming laptop with RTX graphics",
+      "price": 1299.99,
+      "tax": 130.00
+    }
+  }'
+```
+
+#### Response
+```json
+{
+  "item_id": 123,
+  "item": {
+    "name": "Gaming Laptop",
+    "description": "High-end gaming laptop with RTX graphics",
+    "price": 1299.99,
+    "tax": 130.0
+  }
+}
+```
+
+#### Validation Error Examples
+```bash
+# Price <= 0 (violates gt=0)
+curl -X PUT "http://localhost:8000/items/123" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "item": {
+      "name": "Free Item",
+      "price": 0
+    }
+  }'
+# Returns: 422 "ensure this value is greater than 0"
+
+# Description too long (violates max_length=300)
+curl -X PUT "http://localhost:8000/items/123" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "item": {
+      "name": "Item",
+      "description": "Very long description that exceeds 300 characters...",
+      "price": 99.99
+    }
+  }'
+# Returns: 422 "ensure this value has at most 300 characters"
+
+# Missing required fields
+curl -X PUT "http://localhost:8000/items/123" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "item": {
+      "description": "Missing name and price"
+    }
+  }'
+# Returns: 422 "field required" for name and price
+```
+
+### Field Validation Benefits
+
+#### Data Integrity
+- **Automatic validation**: Before function execution
+- **Type safety**: Ensures correct data types
+- **Constraint enforcement**: Business rule validation
+- **Consistent validation**: Across all endpoints using the model
+
+#### API Documentation Enhancement
+- **Field metadata**: Custom titles and descriptions appear in docs
+- **Constraint visibility**: Validation rules shown in API documentation
+- **Example generation**: Better examples in auto-generated docs
+- **User guidance**: Clear field requirements and limitations
+
+#### Error Handling
+- **Detailed error messages**: Specific validation failure reasons
+- **422 status codes**: Standard validation error responses
+- **Field-level errors**: Pinpoint which fields failed validation
+- **User-friendly feedback**: Clear guidance on how to fix errors
+
+### Common Field Validation Patterns
+
+#### Numeric Constraints
+```python
+price: float = Field(gt=0)              # Greater than 0
+quantity: int = Field(ge=1, le=100)     # Between 1 and 100
+rating: float = Field(ge=0.0, le=5.0)   # Rating scale 0-5
+```
+
+#### String Constraints
+```python
+name: str = Field(min_length=1, max_length=100)
+email: str = Field(regex=r'^[\w\.-]+@[\w\.-]+\.\w+$')
+description: str = Field(max_length=500)
+```
+
+#### Optional Fields with Metadata
+```python
+bio: Union[str, None] = Field(
+    default=None,
+    title="User Biography",
+    description="Optional user biography",
+    max_length=1000
+)
+```
+
+### Key Learning Points
+- **Field() provides granular control** over individual model attributes
+- **Validation happens automatically** during request processing
+- **Metadata enhances API documentation** quality significantly
+- **Constraint violations return detailed 422 errors** with specific messages
+- **Field validation is reusable** across multiple endpoints using the same model
+- **Combines perfectly with Body embedding** for consistent JSON structure
+- **Supports all standard validation patterns** needed in real-world APIs
