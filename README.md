@@ -54,6 +54,7 @@ FastAPI_handson/
 ├── 19jsoncompatibleencoder.py
 ├── 20Bodyupdates.py
 ├── 21Dependenciesstart.py
+├── 22Classesanddependencies.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -6178,3 +6179,601 @@ def simple_pagination(skip: int = 0, limit: int = 100):
 - **FastAPI automatically handles** parameter extraction and dependency resolution
 
 This lesson establishes the foundation for using FastAPI's dependency injection system to build cleaner, more maintainable applications with reusable components and better separation of concerns!
+
+---
+
+## Lesson 22: Class-Based Dependencies
+
+### Overview
+- **Purpose**: Learn advanced dependency injection patterns using class-based dependencies for better organization and object-oriented design
+- **Key Concepts**: Class dependencies, shortcut vs explicit syntax, object-oriented parameter handling, reusable dependency classes
+- **Use Cases**: Complex parameter sets, organized dependency management, scalable application architecture, and enhanced code maintainability
+
+### File: `22Classesanddependencies.py`
+
+This lesson introduces class-based dependencies in FastAPI, demonstrating how to use classes instead of functions for dependency injection. This approach provides better organization for complex parameter sets and follows object-oriented design principles.
+
+### Core Concepts
+
+#### **Class-Based Dependencies vs Function-Based**
+```python
+# Function-based dependency (previous lessons)
+async def common_parameters(q: str | None = None, skip: int = 0, limit: int = 100):
+    return {"q": q, "skip": skip, "limit": limit}
+
+# Class-based dependency (this lesson)
+class CommonQueryParams:
+    def __init__(self, q: str | None = None, skip: int = 0, limit: int = 100):
+        self.q = q
+        self.skip = skip
+        self.limit = limit
+```
+
+#### **Two Dependency Syntax Variations**
+```python
+# Shortcut syntax - FastAPI infers the class
+@app.get("/items/")
+async def read_items(commons: Annotated[CommonQueryParams, Depends()]):
+    return {"q": commons.q, "items": [...]}
+
+# Explicit syntax - clearly specify the dependency class
+@app.get("/users/")
+async def read_users(commons: Annotated[CommonQueryParams, Depends(CommonQueryParams)]):
+    return {"q": commons.q, "items": [...]}
+```
+
+### Implementation Details
+
+#### **CommonQueryParams Class Design**
+```python
+class CommonQueryParams:
+    """
+    Class-based dependency for common query parameters.
+    
+    Encapsulates pagination and search parameters with better organization
+    than function-based dependencies for complex parameter sets.
+    """
+    
+    def __init__(self, q: str | None = None, skip: int = 0, limit: int = 100):
+        """Initialize common query parameters for pagination and search."""
+        self.q = q
+        self.skip = skip
+        self.limit = limit
+```
+
+#### **Items Endpoint (Shortcut Syntax)**
+```python
+@app.get("/items/")
+async def read_items(commons: Annotated[CommonQueryParams, Depends()]):
+    """
+    Retrieve items using class-based dependency with shortcut syntax.
+    
+    Demonstrates Depends() without arguments - FastAPI automatically
+    detects the dependency class from the type annotation.
+    """
+    response = {}
+    if commons.q:
+        response["q"] = commons.q
+    response["items"] = fake_items_db[commons.skip : commons.skip + commons.limit]
+    return response
+```
+
+#### **Users Endpoint (Explicit Syntax)**
+```python
+@app.get("/users/")
+async def read_users(commons: Annotated[CommonQueryParams, Depends(CommonQueryParams)]):
+    """
+    Retrieve users using class-based dependency with explicit syntax.
+    
+    Demonstrates Depends(CommonQueryParams) - explicitly specifying
+    the dependency class for better clarity and control.
+    """
+    response = {}
+    if commons.q:
+        response["q"] = commons.q
+    response["items"] = fake_items_db[commons.skip : commons.skip + commons.limit]
+    return response
+```
+
+### Dependency Syntax Comparison
+
+#### **Shortcut vs Explicit Syntax**
+
+| Aspect | Shortcut Syntax | Explicit Syntax |
+|--------|----------------|-----------------|
+| Code | `Depends()` | `Depends(CommonQueryParams)` |
+| Clarity | More concise | More explicit |
+| Flexibility | Limited | Full control |
+| Performance | Same | Same |
+| Maintainability | Good for simple cases | Better for complex apps |
+| Team preference | Minimalist teams | Explicit documentation teams |
+
+#### **When to Use Each Syntax**
+
+**Shortcut Syntax (`Depends()`):**
+```python
+# Use when:
+# - Dependency class matches type annotation exactly
+# - Simple, straightforward dependency injection
+# - Team prefers concise code
+# - Single dependency class per parameter
+
+@app.get("/simple/")
+async def simple_endpoint(params: Annotated[SimpleParams, Depends()]):
+    return params.to_dict()
+```
+
+**Explicit Syntax (`Depends(Class)`):**
+```python
+# Use when:
+# - Multiple possible dependency classes
+# - Complex inheritance hierarchies
+# - Better documentation needed
+# - Dependency differs from type annotation
+
+@app.get("/complex/")
+async def complex_endpoint(
+    params: Annotated[BaseParams, Depends(AdvancedParams)]
+):
+    return params.advanced_method()
+```
+
+### Class-Based Dependencies Benefits
+
+#### **Organization Advantages**
+```python
+# Before: Multiple function parameters
+async def get_user_filters(
+    active: bool = True,
+    role: str | None = None,
+    department: str | None = None,
+    created_after: datetime | None = None,
+    created_before: datetime | None = None,
+    sort_by: str = "name",
+    sort_order: str = "asc"
+):
+    return {
+        "active": active,
+        "role": role,
+        "department": department,
+        "created_after": created_after,
+        "created_before": created_before,
+        "sort_by": sort_by,
+        "sort_order": sort_order
+    }
+```
+
+```python
+# After: Organized class with methods
+class UserFilters:
+    def __init__(
+        self,
+        active: bool = True,
+        role: str | None = None,
+        department: str | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
+        sort_by: str = "name",
+        sort_order: str = "asc"
+    ):
+        self.active = active
+        self.role = role
+        self.department = department
+        self.created_after = created_after
+        self.created_before = created_before
+        self.sort_by = sort_by
+        self.sort_order = sort_order
+    
+    def to_query_dict(self) -> dict:
+        """Convert filters to database query parameters."""
+        filters = {"active": self.active}
+        if self.role:
+            filters["role"] = self.role
+        if self.department:
+            filters["department"] = self.department
+        return filters
+    
+    def validate(self):
+        """Validate filter parameters."""
+        if self.sort_by not in ["name", "created_at", "role"]:
+            raise HTTPException(400, "Invalid sort_by field")
+        if self.sort_order not in ["asc", "desc"]:
+            raise HTTPException(400, "Invalid sort_order")
+        return self
+```
+
+### Advanced Class-Based Patterns
+
+#### **Inheritance and Polymorphism**
+```python
+class BaseQueryParams:
+    """Base class for common query parameters."""
+    
+    def __init__(self, skip: int = 0, limit: int = 100):
+        self.skip = skip
+        self.limit = limit
+        
+    def validate_pagination(self):
+        if self.skip < 0:
+            raise HTTPException(400, "Skip cannot be negative")
+        if self.limit > 1000:
+            raise HTTPException(400, "Limit too large")
+
+class SearchableQueryParams(BaseQueryParams):
+    """Extended query parameters with search capability."""
+    
+    def __init__(self, q: str | None = None, **kwargs):
+        super().__init__(**kwargs)
+        self.q = q
+        
+    def has_search(self) -> bool:
+        return self.q is not None and len(self.q.strip()) > 0
+
+class AdvancedQueryParams(SearchableQueryParams):
+    """Advanced query parameters with filtering and sorting."""
+    
+    def __init__(
+        self,
+        sort_by: str = "id",
+        sort_order: str = "asc",
+        filter_active: bool = True,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.sort_by = sort_by
+        self.sort_order = sort_order
+        self.filter_active = filter_active
+```
+
+#### **Using Inheritance in Endpoints**
+```python
+@app.get("/basic-items/")
+async def get_basic_items(params: Annotated[BaseQueryParams, Depends()]):
+    """Simple pagination only."""
+    return {"items": items[params.skip:params.skip + params.limit]}
+
+@app.get("/searchable-items/")
+async def get_searchable_items(params: Annotated[SearchableQueryParams, Depends()]):
+    """Pagination with search capability."""
+    params.validate_pagination()
+    
+    filtered_items = items
+    if params.has_search():
+        filtered_items = [item for item in items if params.q.lower() in item["name"].lower()]
+    
+    return {
+        "query": params.q,
+        "items": filtered_items[params.skip:params.skip + params.limit]
+    }
+
+@app.get("/advanced-items/")
+async def get_advanced_items(params: Annotated[AdvancedQueryParams, Depends()]):
+    """Full-featured endpoint with all capabilities."""
+    params.validate_pagination()
+    
+    # Apply filters
+    filtered_items = [item for item in items if item["active"] == params.filter_active]
+    
+    # Apply search
+    if params.has_search():
+        filtered_items = [item for item in filtered_items if params.q.lower() in item["name"].lower()]
+    
+    # Apply sorting
+    reverse = params.sort_order == "desc"
+    filtered_items.sort(key=lambda x: x.get(params.sort_by, ""), reverse=reverse)
+    
+    return {
+        "query": params.q,
+        "filters": {"active": params.filter_active},
+        "sorting": {"by": params.sort_by, "order": params.sort_order},
+        "items": filtered_items[params.skip:params.skip + params.limit]
+    }
+```
+
+### Validation and Error Handling
+
+#### **Built-in Validation with Classes**
+```python
+from pydantic import BaseModel, Field, validator
+
+class ValidatedQueryParams(BaseModel):
+    """Pydantic-based dependency with automatic validation."""
+    
+    q: str | None = Field(None, description="Search query")
+    skip: int = Field(0, ge=0, description="Items to skip")
+    limit: int = Field(100, ge=1, le=1000, description="Items per page")
+    sort_by: str = Field("id", regex="^(id|name|created_at)$")
+    
+    @validator('q')
+    def validate_query(cls, v):
+        if v is not None and len(v.strip()) < 2:
+            raise ValueError('Query must be at least 2 characters')
+        return v.strip() if v else None
+
+@app.get("/validated-items/")
+async def get_validated_items(params: Annotated[ValidatedQueryParams, Depends()]):
+    """Endpoint with automatic Pydantic validation."""
+    return {
+        "query": params.q,
+        "pagination": {"skip": params.skip, "limit": params.limit},
+        "sorting": params.sort_by,
+        "items": items[params.skip:params.skip + params.limit]
+    }
+```
+
+#### **Custom Validation Methods**
+```python
+class CustomValidatedParams:
+    """Custom validation logic in class methods."""
+    
+    def __init__(self, skip: int = 0, limit: int = 100, category: str | None = None):
+        self.skip = skip
+        self.limit = limit
+        self.category = category
+        
+    def validate(self):
+        """Custom validation with detailed error messages."""
+        errors = []
+        
+        if self.skip < 0:
+            errors.append("Skip parameter cannot be negative")
+            
+        if self.limit <= 0 or self.limit > 1000:
+            errors.append("Limit must be between 1 and 1000")
+            
+        if self.category and self.category not in ["electronics", "books", "clothing"]:
+            errors.append("Invalid category. Must be: electronics, books, or clothing")
+            
+        if errors:
+            raise HTTPException(400, detail={"errors": errors})
+            
+        return self
+
+@app.get("/custom-validated/")
+async def get_custom_validated(params: Annotated[CustomValidatedParams, Depends()]):
+    """Endpoint with custom validation."""
+    validated_params = params.validate()
+    return {"message": "Validation passed", "params": vars(validated_params)}
+```
+
+### Testing Class-Based Dependencies
+
+#### **Direct Class Testing**
+```python
+import pytest
+
+def test_common_query_params_creation():
+    """Test CommonQueryParams class instantiation."""
+    
+    # Test default values
+    params = CommonQueryParams()
+    assert params.q is None
+    assert params.skip == 0
+    assert params.limit == 100
+    
+    # Test custom values
+    params = CommonQueryParams(q="search", skip=10, limit=20)
+    assert params.q == "search"
+    assert params.skip == 10
+    assert params.limit == 20
+
+def test_common_query_params_with_none_values():
+    """Test handling of None and edge cases."""
+    params = CommonQueryParams(q="", skip=0, limit=1)
+    assert params.q == ""
+    assert params.skip == 0
+    assert params.limit == 1
+```
+
+#### **Endpoint Testing with Class Dependencies**
+```python
+from fastapi.testclient import TestClient
+
+def test_items_endpoint_with_class_dependency():
+    """Test items endpoint using class-based dependency."""
+    client = TestClient(app)
+    
+    # Test default parameters
+    response = client.get("/items/")
+    assert response.status_code == 200
+    data = response.json()
+    assert "items" in data
+    assert len(data["items"]) <= 100  # Default limit
+    
+    # Test with query parameter
+    response = client.get("/items/?q=test")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["q"] == "test"
+    assert "items" in data
+    
+    # Test pagination
+    response = client.get("/items/?skip=1&limit=2")
+    assert response.status_code == 200
+    data = response.json()
+    assert "items" in data
+    assert len(data["items"]) <= 2
+
+def test_users_endpoint_explicit_syntax():
+    """Test users endpoint with explicit dependency syntax."""
+    client = TestClient(app)
+    
+    response = client.get("/users/?q=admin&skip=0&limit=5")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["q"] == "admin"
+    assert "items" in data
+    assert len(data["items"]) <= 5
+```
+
+#### **Dependency Override for Testing**
+```python
+class TestQueryParams:
+    """Test-specific dependency class."""
+    
+    def __init__(self):
+        self.q = "test_query"
+        self.skip = 0
+        self.limit = 5
+
+def test_with_dependency_override():
+    """Test endpoint with overridden dependency."""
+    app.dependency_overrides[CommonQueryParams] = TestQueryParams
+    
+    client = TestClient(app)
+    response = client.get("/items/")
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["q"] == "test_query"
+    assert len(data["items"]) <= 5
+    
+    # Clean up
+    app.dependency_overrides = {}
+```
+
+### Performance Considerations
+
+#### **Class Instantiation Overhead**
+```python
+# Lightweight class design for performance
+class OptimizedParams:
+    """Optimized class with minimal overhead."""
+    __slots__ = ["q", "skip", "limit"]  # Reduce memory usage
+    
+    def __init__(self, q: str | None = None, skip: int = 0, limit: int = 100):
+        self.q = q
+        self.skip = skip
+        self.limit = limit
+
+# Caching for expensive class operations
+from functools import lru_cache
+
+class CachedParams:
+    """Class with cached expensive operations."""
+    
+    def __init__(self, complex_param: str = "default"):
+        self.complex_param = complex_param
+    
+    @lru_cache(maxsize=128)
+    def expensive_computation(self):
+        """Cached expensive method."""
+        # Simulate expensive operation
+        return f"processed_{self.complex_param}"
+```
+
+### Real-World Applications
+
+#### **API Versioning with Classes**
+```python
+class V1QueryParams:
+    """Version 1 API parameters."""
+    
+    def __init__(self, q: str | None = None, page: int = 1, size: int = 20):
+        self.q = q
+        self.page = page
+        self.size = size
+        
+    @property
+    def skip(self):
+        return (self.page - 1) * self.size
+    
+    @property
+    def limit(self):
+        return self.size
+
+class V2QueryParams:
+    """Version 2 API parameters with enhanced features."""
+    
+    def __init__(
+        self,
+        q: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+        include_metadata: bool = False
+    ):
+        self.q = q
+        self.offset = offset
+        self.limit = limit
+        self.include_metadata = include_metadata
+
+@app.get("/v1/items/")
+async def get_items_v1(params: Annotated[V1QueryParams, Depends()]):
+    """Version 1 endpoint with page-based pagination."""
+    return {
+        "items": items[params.skip:params.skip + params.limit],
+        "page": params.page,
+        "size": params.size
+    }
+
+@app.get("/v2/items/")
+async def get_items_v2(params: Annotated[V2QueryParams, Depends()]):
+    """Version 2 endpoint with offset-based pagination."""
+    result = {"items": items[params.offset:params.offset + params.limit]}
+    
+    if params.include_metadata:
+        result["metadata"] = {
+            "total": len(items),
+            "offset": params.offset,
+            "limit": params.limit
+        }
+    
+    return result
+```
+
+#### **Multi-Tenant Applications**
+```python
+class TenantAwareParams:
+    """Parameters with tenant isolation."""
+    
+    def __init__(
+        self,
+        tenant_id: str = Header(...),
+        q: str | None = None,
+        skip: int = 0,
+        limit: int = 100
+    ):
+        self.tenant_id = tenant_id
+        self.q = q
+        self.skip = skip
+        self.limit = limit
+        
+    def validate_tenant_access(self, user_tenant_id: str):
+        """Validate user has access to requested tenant."""
+        if self.tenant_id != user_tenant_id:
+            raise HTTPException(403, "Insufficient tenant permissions")
+        return self
+
+@app.get("/tenant-items/")
+async def get_tenant_items(
+    params: Annotated[TenantAwareParams, Depends()],
+    current_user: dict = Depends(get_current_user)
+):
+    """Multi-tenant endpoint with isolation."""
+    params.validate_tenant_access(current_user["tenant_id"])
+    
+    # Filter items by tenant
+    tenant_items = [
+        item for item in items 
+        if item.get("tenant_id") == params.tenant_id
+    ]
+    
+    return {
+        "tenant": params.tenant_id,
+        "items": tenant_items[params.skip:params.skip + params.limit]
+    }
+```
+
+### Key Learning Points
+- **Class-based dependencies provide better organization** for complex parameter sets
+- **Two syntax variations offer flexibility** - shortcut `Depends()` vs explicit `Depends(Class)`
+- **Object-oriented design principles** apply to dependency injection patterns
+- **Inheritance enables sophisticated dependency hierarchies** for complex applications
+- **Custom validation methods** can be integrated into dependency classes
+- **Performance considerations** include class instantiation overhead and caching strategies
+- **Real-world applications** benefit from versioning, multi-tenancy, and advanced validation
+- **Testing approaches** include direct class testing and dependency override mechanisms
+- **Pydantic integration** provides automatic validation and documentation
+- **Class dependencies scale better** than function dependencies for complex applications
+
+This lesson establishes advanced dependency injection patterns using object-oriented design principles, providing a foundation for building sophisticated, maintainable FastAPI applications!
