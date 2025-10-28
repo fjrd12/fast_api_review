@@ -331,8 +331,6 @@ Response models enable:
 
 This lesson establishes the foundation for building type-safe, well-documented APIs with predictable response structures that improve both developer experience and API reliability!
 
-````
-
 ### Key Concepts Covered
 1. **Basic Path Parameters**: Capturing URL segments as variables
 2. **Type Hints**: Automatic validation and conversion of path parameters
