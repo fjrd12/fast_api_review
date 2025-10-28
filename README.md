@@ -55,6 +55,7 @@ FastAPI_handson/
 ├── 20Bodyupdates.py
 ├── 21Dependenciesstart.py
 ├── 22Classesanddependencies.py
+├── 23dependency-subdependencies.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -6777,3 +6778,515 @@ async def get_tenant_items(
 - **Class dependencies scale better** than function dependencies for complex applications
 
 This lesson establishes advanced dependency injection patterns using object-oriented design principles, providing a foundation for building sophisticated, maintainable FastAPI applications!
+
+---
+
+## Lesson 23: Sub-Dependencies and Dependency Chains
+
+### Overview
+- **Purpose**: Master advanced dependency injection patterns using sub-dependencies for hierarchical parameter processing and sophisticated fallback mechanisms
+- **Key Concepts**: Dependency chaining, sub-dependency composition, cookie fallback systems, multi-source parameter resolution
+- **Use Cases**: Search with persistence, user preference systems, authentication chains, complex parameter validation pipelines
+
+### File: `23dependency-subdependencies.py`
+
+This lesson introduces sub-dependencies in FastAPI, demonstrating how to create sophisticated dependency chains where one dependency depends on another. This enables complex parameter processing workflows with intelligent fallback mechanisms and enhanced user experiences.
+
+### Core Concepts
+
+#### **Dependency Chain Architecture**
+```python
+# Level 1: Base dependency (query extraction)
+def query_extractor(q: str | None = None):
+    return q
+
+# Level 2: Enhanced dependency (with fallback logic)
+def query_or_cookie_extractor(
+    q: Annotated[str, Depends(query_extractor)],  # Sub-dependency
+    last_query: Annotated[str | None, Cookie()] = None  # Additional source
+):
+    return q if q else last_query  # Fallback logic
+
+# Level 3: Endpoint using the chain
+@app.get("/items/")
+async def read_query(query: Annotated[str, Depends(query_or_cookie_extractor)]):
+    return {"q_or_cookie": query}
+```
+
+#### **Sub-Dependency Resolution Flow**
+```
+HTTP Request
+    │
+    ├─ URL Parameter: ?q=search ──► query_extractor() ──┐
+    │                                                   │
+    └─ Cookie: last_query=saved ─────────────────────► query_or_cookie_extractor()
+                                                        │
+                                                        ▼
+                                                   Final Result
+```
+
+### Implementation Details
+
+#### **Base Dependency: query_extractor**
+```python
+def query_extractor(q: str | None = None):
+    """
+    Base dependency for extracting query parameters from HTTP requests.
+    
+    Serves as the foundation of the sub-dependency chain, handling
+    initial extraction of search query parameters with clean separation
+    of concerns for reusability across multiple dependency levels.
+    """
+    return q
+```
+
+**Key Features:**
+- **Single Responsibility**: Only handles query parameter extraction
+- **Reusability**: Can be used independently or as sub-dependency
+- **Simplicity**: Minimal overhead with direct parameter passthrough
+- **Composability**: Perfect building block for complex dependencies
+
+#### **Enhanced Dependency: query_or_cookie_extractor**
+```python
+def query_or_cookie_extractor(
+    q: Annotated[str, Depends(query_extractor)],  # Sub-dependency injection
+    last_query: Annotated[str | None, Cookie()] = None  # Cookie fallback
+):
+    """
+    Advanced dependency combining query parameters with cookie fallback.
+    
+    Demonstrates sophisticated sub-dependency patterns by depending on
+    query_extractor while implementing intelligent fallback mechanisms
+    for enhanced user experience through persistence.
+    """
+    if not q:
+        return last_query  # Use cookie when no query provided
+    return q  # Query parameter takes priority
+```
+
+**Advanced Features:**
+- **Sub-Dependency Integration**: Automatically calls query_extractor
+- **Multi-Source Resolution**: Combines URL parameters and cookies
+- **Priority Logic**: Query parameters override cookie values
+- **User Experience**: Remembers previous searches automatically
+
+#### **Endpoint Implementation**
+```python
+@app.get("/items/")
+async def read_query(
+    query_or_default: Annotated[str, Depends(query_or_cookie_extractor)]
+):
+    """
+    Endpoint demonstrating complete sub-dependency chain utilization.
+    
+    Automatically resolves search queries from multiple sources with
+    intelligent fallback mechanisms through dependency composition.
+    """
+    return {"q_or_cookie": query_or_default}
+```
+
+### Sub-Dependency Benefits
+
+#### **Modular Design Advantages**
+
+| Aspect | Without Sub-Dependencies | With Sub-Dependencies |
+|--------|-------------------------|----------------------|
+| **Code Organization** | Monolithic functions | Modular, focused components |
+| **Reusability** | Limited reuse | High reusability across endpoints |
+| **Testing** | Complex integration tests | Simple unit tests per component |
+| **Maintenance** | Changes affect multiple areas | Isolated component updates |
+| **Complexity** | Single complex function | Multiple simple functions |
+
+#### **Before Sub-Dependencies (Monolithic)**
+```python
+def complex_parameter_extractor(
+    q: str | None = None,
+    last_query: str | None = Cookie(None),
+    user_id: str | None = Header(None),
+    session_data: str | None = Cookie(None)
+):
+    # All logic in one place - harder to test and reuse
+    if q:
+        return {"source": "query", "value": q}
+    elif last_query:
+        return {"source": "cookie", "value": last_query}
+    elif user_id and session_data:
+        # Complex session logic here
+        return {"source": "session", "value": get_session_search(user_id, session_data)}
+    else:
+        return {"source": "default", "value": ""}
+```
+
+#### **After Sub-Dependencies (Modular)**
+```python
+# Level 1: Base query extraction
+def query_extractor(q: str | None = None):
+    return q
+
+# Level 2: Cookie fallback
+def query_or_cookie_extractor(
+    q: str = Depends(query_extractor),
+    last_query: str | None = Cookie(None)
+):
+    return q or last_query
+
+# Level 3: Session fallback
+def full_query_extractor(
+    query: str = Depends(query_or_cookie_extractor),
+    user_id: str | None = Header(None),
+    session_data: str | None = Cookie(None)
+):
+    if query:
+        return {"source": "query_or_cookie", "value": query}
+    elif user_id and session_data:
+        return {"source": "session", "value": get_session_search(user_id, session_data)}
+    else:
+        return {"source": "default", "value": ""}
+```
+
+### Advanced Sub-Dependency Patterns
+
+#### **Multi-Level Authentication Chain**
+```python
+# Level 1: Token extraction
+def token_extractor(authorization: str | None = Header(None)):
+    """Extract token from Authorization header."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    return authorization[7:]  # Remove "Bearer " prefix
+
+# Level 2: Token validation
+def validate_token(token: str | None = Depends(token_extractor)):
+    """Validate JWT token and extract user data."""
+    if not token:
+        raise HTTPException(401, "Missing token")
+    
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        return {"user_id": payload["sub"], "username": payload["username"]}
+    except JWTError:
+        raise HTTPException(401, "Invalid token")
+
+# Level 3: Permission validation
+def require_admin(user: dict = Depends(validate_token)):
+    """Ensure user has admin permissions."""
+    if not user.get("is_admin"):
+        raise HTTPException(403, "Admin access required")
+    return user
+
+# Level 4: Endpoint using the full chain
+@app.get("/admin/users/")
+async def admin_users(admin_user: dict = Depends(require_admin)):
+    """Admin-only endpoint with complete authentication chain."""
+    return {"admin": admin_user["username"], "users": get_all_users()}
+```
+
+#### **Database Connection Chain**
+```python
+# Level 1: Database session
+def get_db():
+    """Base database session dependency."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# Level 2: Repository layer
+def get_user_repository(db: Session = Depends(get_db)):
+    """User repository with database dependency."""
+    return UserRepository(db)
+
+# Level 3: Service layer
+def get_user_service(
+    user_repo: UserRepository = Depends(get_user_repository)
+):
+    """User service with repository dependency."""
+    return UserService(user_repo)
+
+# Level 4: Endpoint with full service chain
+@app.get("/users/{user_id}")
+async def get_user(
+    user_id: int,
+    user_service: UserService = Depends(get_user_service)
+):
+    """Get user through complete service chain."""
+    user = await user_service.get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    return user
+```
+
+### Real-World Applications
+
+#### **Search System with Persistence**
+```python
+# Enhanced search system with multiple fallback levels
+def search_query_extractor(q: str | None = None):
+    """Extract search query from URL parameters."""
+    return q.strip() if q else None
+
+def search_with_history(
+    q: str = Depends(search_query_extractor),
+    last_search: str | None = Cookie(None),
+    user_id: str | None = Depends(get_current_user_id)
+):
+    """Search with user history fallback."""
+    if q:
+        # Save search to user history
+        if user_id:
+            save_user_search(user_id, q)
+        return q
+    elif last_search:
+        return last_search
+    elif user_id:
+        # Get user's most recent search
+        return get_last_user_search(user_id)
+    else:
+        return None
+
+@app.get("/search/")
+async def search_items(
+    query: str = Depends(search_with_history),
+    skip: int = 0,
+    limit: int = 20
+):
+    """Smart search with automatic query resolution."""
+    if not query:
+        # Return trending items when no query
+        items = get_trending_items(skip, limit)
+        return {"type": "trending", "items": items, "query": None}
+    
+    # Perform actual search
+    items = search_items_database(query, skip, limit)
+    return {"type": "search", "items": items, "query": query}
+```
+
+#### **Multi-Tenant Application**
+```python
+# Tenant resolution chain
+def extract_tenant_header(x_tenant_id: str | None = Header(None)):
+    """Extract tenant ID from header."""
+    return x_tenant_id
+
+def extract_tenant_subdomain(request: Request):
+    """Extract tenant from subdomain."""
+    host = request.headers.get("host", "")
+    if "." in host:
+        subdomain = host.split(".")[0]
+        return subdomain if subdomain != "www" else None
+    return None
+
+def resolve_tenant(
+    header_tenant: str | None = Depends(extract_tenant_header),
+    subdomain_tenant: str | None = Depends(extract_tenant_subdomain),
+    user: dict | None = Depends(get_current_user_optional)
+):
+    """Resolve tenant from multiple sources with priority."""
+    # Priority: Header > Subdomain > User default
+    tenant_id = header_tenant or subdomain_tenant
+    
+    if not tenant_id and user:
+        tenant_id = user.get("default_tenant_id")
+    
+    if not tenant_id:
+        raise HTTPException(400, "Tenant ID required")
+    
+    # Validate tenant access
+    if user and not user_has_tenant_access(user["id"], tenant_id):
+        raise HTTPException(403, "Tenant access denied")
+    
+    return {"tenant_id": tenant_id, "source": determine_source(header_tenant, subdomain_tenant)}
+
+@app.get("/tenant/data/")
+async def get_tenant_data(
+    tenant_info: dict = Depends(resolve_tenant),
+    query: str = Depends(query_or_cookie_extractor)
+):
+    """Multi-tenant endpoint with complex resolution."""
+    tenant_id = tenant_info["tenant_id"]
+    
+    # Get tenant-specific data
+    data = get_tenant_data(tenant_id, query)
+    
+    return {
+        "tenant": tenant_id,
+        "source": tenant_info["source"],
+        "query": query,
+        "data": data
+    }
+```
+
+### Testing Sub-Dependencies
+
+#### **Individual Dependency Testing**
+```python
+import pytest
+from fastapi.testclient import TestClient
+
+def test_query_extractor():
+    """Test base dependency in isolation."""
+    # Test with query
+    result = query_extractor(q="test_query")
+    assert result == "test_query"
+    
+    # Test without query
+    result = query_extractor(q=None)
+    assert result is None
+    
+    # Test with empty query
+    result = query_extractor(q="")
+    assert result == ""
+
+def test_query_or_cookie_extractor():
+    """Test sub-dependency logic."""
+    # Test query priority
+    result = query_or_cookie_extractor(q="url_query", last_query="cookie_query")
+    assert result == "url_query"
+    
+    # Test cookie fallback
+    result = query_or_cookie_extractor(q=None, last_query="cookie_query")
+    assert result == "cookie_query"
+    
+    # Test no sources
+    result = query_or_cookie_extractor(q=None, last_query=None)
+    assert result is None
+```
+
+#### **Integration Testing**
+```python
+def test_endpoint_with_sub_dependencies():
+    """Test complete endpoint with dependency chain."""
+    client = TestClient(app)
+    
+    # Test with query parameter (highest priority)
+    response = client.get(
+        "/items/?q=search_term",
+        cookies={"last_query": "old_search"}
+    )
+    assert response.status_code == 200
+    assert response.json() == {"q_or_cookie": "search_term"}
+    
+    # Test cookie fallback
+    response = client.get(
+        "/items/",
+        cookies={"last_query": "cookie_search"}
+    )
+    assert response.status_code == 200
+    assert response.json() == {"q_or_cookie": "cookie_search"}
+    
+    # Test no sources
+    response = client.get("/items/")
+    assert response.status_code == 200
+    assert response.json() == {"q_or_cookie": None}
+```
+
+#### **Dependency Override Testing**
+```python
+def test_with_dependency_overrides():
+    """Test using dependency overrides for controlled testing."""
+    
+    # Mock sub-dependency
+    def mock_query_extractor():
+        return "mocked_query"
+    
+    # Override dependency
+    app.dependency_overrides[query_extractor] = mock_query_extractor
+    
+    client = TestClient(app)
+    response = client.get("/items/")
+    
+    assert response.status_code == 200
+    assert response.json() == {"q_or_cookie": "mocked_query"}
+    
+    # Clean up
+    app.dependency_overrides = {}
+```
+
+### Performance Considerations
+
+#### **Dependency Caching**
+```python
+# FastAPI automatically caches dependencies within request scope
+@app.get("/complex-endpoint/")
+async def complex_endpoint(
+    query1: str = Depends(query_or_cookie_extractor),  # Calls chain once
+    query2: str = Depends(query_or_cookie_extractor),  # Uses cached result
+    query3: str = Depends(query_extractor)             # Uses cached sub-dependency
+):
+    """All dependencies are cached - no redundant execution."""
+    return {
+        "query1": query1,
+        "query2": query2,  # Same as query1 (cached)
+        "query3": query3   # From cached sub-dependency
+    }
+```
+
+#### **Optimization Strategies**
+```python
+# Lazy evaluation for expensive operations
+def expensive_computation():
+    """Expensive operation - only called when needed."""
+    return perform_complex_calculation()
+
+@lru_cache(maxsize=128)
+def cached_expensive_computation():
+    """Cached version for repeated calls."""
+    return expensive_computation()
+
+def optimized_dependency(
+    query: str = Depends(query_extractor),
+    force_calculation: bool = False
+):
+    """Only perform expensive operations when necessary."""
+    if not query and not force_calculation:
+        return {"type": "default", "data": None}
+    
+    # Expensive operation only when needed
+    result = cached_expensive_computation() if query else None
+    return {"type": "computed", "data": result, "query": query}
+```
+
+### Error Handling in Sub-Dependencies
+
+#### **Graceful Failure Chains**
+```python
+def safe_query_extractor(q: str | None = None):
+    """Query extractor with validation."""
+    if q and len(q) > 1000:  # Prevent extremely long queries
+        raise HTTPException(400, "Query too long")
+    return q
+
+def robust_cookie_fallback(
+    q: str = Depends(safe_query_extractor),
+    last_query: str | None = Cookie(None)
+):
+    """Robust fallback with error handling."""
+    try:
+        if q:
+            return q
+        if last_query:
+            # Validate cookie content
+            if len(last_query) > 1000:
+                logger.warning("Invalid cookie length, ignoring")
+                return None
+            return last_query
+        return None
+    except Exception as e:
+        logger.error(f"Error in cookie fallback: {e}")
+        return q  # Fallback to query only
+```
+
+### Key Learning Points
+- **Sub-dependencies enable hierarchical parameter processing** with clean separation of concerns
+- **Dependency chaining creates sophisticated workflows** while maintaining modularity and reusability
+- **Fallback mechanisms enhance user experience** through intelligent parameter resolution from multiple sources
+- **Cookie integration provides persistence** for user preferences and search history
+- **FastAPI automatically caches dependencies** within request scope for optimal performance
+- **Testing strategies include isolation and integration** approaches for comprehensive coverage
+- **Real-world applications benefit from multi-level authentication** and tenant resolution patterns
+- **Error handling requires graceful failure strategies** across the dependency chain
+- **Performance optimization includes caching and lazy evaluation** for expensive operations
+- **Modular design principles** make complex applications more maintainable and testable
+
+This lesson establishes advanced dependency injection patterns that enable sophisticated parameter processing workflows with excellent user experience and robust error handling!
