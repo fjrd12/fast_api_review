@@ -50,6 +50,7 @@ FastAPI_handson/
 ├── 15requestfiles.py
 ├── 16RequestFormFiles.py
 ├── 17HandlingErrors.py
+├── 18pathoperationconfig.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -4017,3 +4018,541 @@ async def get_external_data(item_id: str):
 - **Global exception handlers** catch unexpected errors gracefully
 
 This lesson establishes robust error handling patterns that improve API reliability, user experience, and maintainability while providing proper debugging support for developers!
+
+---
+
+## Lesson 18: Path Operation Configuration
+
+### Overview
+- **Purpose**: Learn comprehensive path operation configuration patterns in FastAPI
+- **Key Concepts**: Response models, status codes, tags, documentation, and API metadata
+- **Use Cases**: API organization, documentation generation, endpoint lifecycle management, and developer experience optimization
+
+### File: `18pathoperationconfig.py`
+
+This lesson demonstrates how to configure FastAPI path operations with advanced settings including response models, custom status codes, tagging systems, rich documentation, and deprecation patterns.
+
+### Core Concepts
+
+#### **Response Model Configuration**
+```python
+from fastapi import status
+from pydantic import BaseModel
+
+@app.post("/items/", response_model=Item, status_code=status.HTTP_201_CREATED)
+async def create_item(item: Item) -> Item:
+    return item
+```
+
+#### **API Tagging for Organization**
+```python
+# String-based tags
+@app.get("/items/", tags=["items"])
+async def get_items():
+    pass
+
+# Enum-based tags (recommended)
+@app.get("/elements/", tags=[Tags.items])
+async def get_elements():
+    pass
+```
+
+#### **Documentation Enhancement**
+```python
+@app.post("/items-summary/", 
+          response_model=Item, 
+          summary="Create an item",
+          description="This endpoint creates an item with the provided details")
+async def create_item_summary(item: Item):
+    return item
+```
+
+### Implementation Details
+
+#### **Data Models**
+```python
+class Item(BaseModel):
+    """
+    Item model for representing product/service items in the API.
+    
+    This Pydantic model defines the structure for items in the system,
+    including all necessary fields for item management and validation.
+    """
+    name: str
+    description: Union[str, None] = None
+    price: float
+    tax: Union[float, None] = None
+    tags: Set[str] = set()
+
+class Tags(Enum):
+    """
+    Enumeration for API endpoint tags.
+    
+    This enum provides a consistent way to categorize API endpoints
+    for better organization and documentation generation.
+    """
+    items = "items"
+    users = "users"
+```
+
+#### **Basic Item Creation with Proper Configuration**
+```python
+@app.post("/items/", response_model=Item, status_code=status.HTTP_201_CREATED)
+async def create_item(item: Item) -> Item:
+    """
+    Create a new item with proper response model and status code configuration.
+    
+    This endpoint demonstrates the fundamental path operation configuration
+    including response model validation and appropriate HTTP status code
+    for resource creation operations.
+    """
+    return item
+```
+
+#### **Tag-Based API Organization**
+```python
+@app.get("/items/", tags=["items"])
+async def get_items() -> list[Item]:
+    """
+    Retrieve all items with string-based tag configuration.
+    
+    This endpoint demonstrates basic API tagging using string literals
+    for organizing endpoints in the automatically generated documentation.
+    """
+    return [{"name": 'burro', "description": 'gato',"price": 10, "tags": ['1','2']}]
+
+@app.get("/users/", tags=["users"])
+async def get_users() -> list[dict]:
+    """
+    Retrieve all users with tag-based API organization.
+    
+    This endpoint demonstrates API organization using tags to separate
+    different resource types (users vs items) in the documentation.
+    """
+    return [{'name': 'Pedro'}, {'name': 'Maria'}]
+```
+
+#### **Enum-Based Tag Management**
+```python
+@app.get("/elements/", tags=[Tags.items])
+async def get_elements() -> list[str]:
+    """
+    Retrieve elements using enum-based tag configuration.
+    
+    This endpoint demonstrates the use of enum values for tags,
+    providing better type safety and maintainability compared to
+    string literals.
+    """
+    return ['element1', 'element2']
+```
+
+### Advanced Configuration Patterns
+
+#### **Rich Documentation with Markdown**
+```python
+@app.post("/items-docstring/", response_model=Item, summary="Create an item")
+async def create_item_docstring(item: Item) -> Item:
+    """
+    Create an item with detailed description.
+    
+    This endpoint allows you to create an item by providing its details
+    in the request body. The created item is then returned in the response.
+    
+    **Request Body:**
+    
+    - `name` (str): The name of the item (required)
+    - `description` (str | None): Optional description of the item
+    - `price` (float): The price of the item (required)
+    - `tax` (float | None): Optional tax amount for the item
+    - `tags` (set[str]): A set of tags associated with the item
+    
+    **Response:**
+    
+    Returns the created item with all provided details.
+    
+    **Example Request Body:**
+    
+    ```json
+    {
+        "name": "Laptop",
+        "description": "A high-end gaming laptop",
+        "price": 1500.00,
+        "tax": 150.00,
+        "tags": ["electronics", "gaming"]
+    }
+    ```
+    """
+    return item
+```
+
+#### **API Deprecation Patterns**
+```python
+@app.get("/elements/", tags=["items"], deprecated=True)
+async def get_elements_deprecated() -> list[str]:
+    """
+    Retrieve elements (DEPRECATED).
+    
+    ⚠️ **DEPRECATION WARNING**: This endpoint is deprecated and will be
+    removed in a future version. Please use the new `/elements/` endpoint
+    without the deprecated parameter.
+    """
+    return ['element1', 'element2']
+```
+
+### Path Operation Parameters
+
+#### **Complete Configuration Options**
+
+| Parameter | Type | Purpose | Example |
+|-----------|------|---------|---------|
+| **response_model** | Pydantic Model | Response validation and documentation | `response_model=Item` |
+| **status_code** | int | HTTP status code for successful response | `status_code=201` |
+| **tags** | List[str] | API organization and grouping | `tags=["items"]` |
+| **summary** | str | Brief endpoint description | `summary="Create item"` |
+| **description** | str | Detailed endpoint explanation | `description="Creates a new item..."` |
+| **deprecated** | bool | Mark endpoint as deprecated | `deprecated=True` |
+| **response_description** | str | Custom response description | `response_description="Item created"` |
+| **responses** | dict | Additional response schemas | `responses={404: {"description": "Not found"}}` |
+
+#### **Comprehensive Endpoint Configuration**
+```python
+@app.post(
+    "/items/complete/",
+    response_model=Item,
+    status_code=status.HTTP_201_CREATED,
+    tags=[Tags.items],
+    summary="Create item with full configuration",
+    description="Creates a new item with comprehensive configuration example",
+    response_description="Successfully created item",
+    responses={
+        400: {"description": "Invalid item data"},
+        409: {"description": "Item already exists"},
+        422: {"description": "Validation error"}
+    }
+)
+async def create_item_complete(item: Item) -> Item:
+    """
+    Complete example of path operation configuration.
+    
+    This endpoint demonstrates all available configuration options
+    for FastAPI path operations, providing a comprehensive example
+    of how to set up production-ready API endpoints.
+    """
+    return item
+```
+
+### API Documentation Benefits
+
+#### **OpenAPI Schema Generation**
+```python
+# Automatic schema generation includes:
+{
+    "openapi": "3.0.2",
+    "info": {"title": "FastAPI", "version": "0.1.0"},
+    "paths": {
+        "/items/": {
+            "post": {
+                "tags": ["items"],
+                "summary": "Create item",
+                "description": "Creates a new item...",
+                "operationId": "create_item",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/Item"}
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Item"}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+#### **Interactive Documentation Features**
+- **Swagger UI**: Interactive API explorer with request/response examples
+- **ReDoc**: Clean, professional API documentation
+- **Schema Validation**: Automatic request/response validation
+- **Code Generation**: Client SDK generation from OpenAPI schema
+- **Testing Interface**: Built-in API testing capabilities
+
+### Tag Organization Strategies
+
+#### **Hierarchical Tag Structure**
+```python
+class APITags(str, Enum):
+    # Core resources
+    ITEMS = "items"
+    USERS = "users"
+    ORDERS = "orders"
+    
+    # Administrative
+    ADMIN = "admin"
+    MONITORING = "monitoring"
+    
+    # Authentication
+    AUTH = "authentication"
+    PERMISSIONS = "permissions"
+    
+    # External integrations
+    PAYMENTS = "payments"
+    NOTIFICATIONS = "notifications"
+
+# Usage examples
+@app.post("/items/", tags=[APITags.ITEMS])
+@app.get("/admin/users/", tags=[APITags.ADMIN, APITags.USERS])
+@app.post("/auth/login/", tags=[APITags.AUTH])
+```
+
+#### **Tag Metadata Configuration**
+```python
+from fastapi import FastAPI
+
+app = FastAPI(
+    title="E-commerce API",
+    description="Comprehensive e-commerce platform API",
+    version="1.0.0",
+    openapi_tags=[
+        {
+            "name": "items",
+            "description": "Operations with items. The **login** logic is also here.",
+        },
+        {
+            "name": "users",
+            "description": "Operations with users. This is where the **users** are managed.",
+        },
+        {
+            "name": "admin",
+            "description": "Administrative operations. **Requires special permissions**.",
+            "externalDocs": {
+                "description": "Admin documentation",
+                "url": "https://example.com/admin-docs",
+            },
+        },
+    ]
+)
+```
+
+### Response Model Patterns
+
+#### **Different Response Models for Different Operations**
+```python
+class ItemCreate(BaseModel):
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+
+class ItemResponse(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    price: float
+    tax: float | None = None
+    created_at: datetime
+    updated_at: datetime
+
+class ItemSummary(BaseModel):
+    id: int
+    name: str
+    price: float
+
+@app.post("/items/", response_model=ItemResponse, status_code=201)
+async def create_item(item: ItemCreate):
+    # Create item logic
+    pass
+
+@app.get("/items/", response_model=List[ItemSummary])
+async def list_items():
+    # List items logic
+    pass
+
+@app.get("/items/{item_id}", response_model=ItemResponse)
+async def get_item(item_id: int):
+    # Get item logic
+    pass
+```
+
+#### **Conditional Response Models**
+```python
+from typing import Union
+
+@app.get("/items/{item_id}", 
+         response_model=Union[ItemResponse, dict],
+         responses={
+             200: {"model": ItemResponse, "description": "Item found"},
+             404: {"model": dict, "description": "Item not found"}
+         })
+async def get_item_conditional(item_id: int):
+    if item_exists(item_id):
+        return get_item_data(item_id)
+    else:
+        raise HTTPException(status_code=404, detail="Item not found")
+```
+
+### Status Code Best Practices
+
+#### **RESTful Status Code Usage**
+```python
+# Resource Creation
+@app.post("/items/", status_code=status.HTTP_201_CREATED)
+async def create_item(item: Item):
+    pass
+
+# Resource Update
+@app.put("/items/{item_id}", status_code=status.HTTP_200_OK)
+async def update_item(item_id: int, item: Item):
+    pass
+
+# Resource Deletion
+@app.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_item(item_id: int):
+    pass
+
+# Partial Update
+@app.patch("/items/{item_id}", status_code=status.HTTP_200_OK)
+async def patch_item(item_id: int, updates: dict):
+    pass
+
+# Bulk Operations
+@app.post("/items/bulk/", status_code=status.HTTP_202_ACCEPTED)
+async def bulk_create_items(items: List[Item]):
+    pass
+```
+
+### Testing Path Operation Configuration
+
+#### **Testing Response Models**
+```python
+from fastapi.testclient import TestClient
+
+def test_create_item_response_model():
+    client = TestClient(app)
+    item_data = {
+        "name": "Test Item",
+        "description": "Test Description",
+        "price": 10.50,
+        "tax": 1.05,
+        "tags": ["test", "example"]
+    }
+    
+    response = client.post("/items/", json=item_data)
+    
+    assert response.status_code == 201
+    assert response.json() == item_data
+
+def test_api_documentation():
+    client = TestClient(app)
+    response = client.get("/openapi.json")
+    
+    assert response.status_code == 200
+    openapi_schema = response.json()
+    
+    # Verify tags are present
+    assert "items" in [tag["name"] for tag in openapi_schema.get("tags", [])]
+    
+    # Verify endpoint configuration
+    items_post = openapi_schema["paths"]["/items/"]["post"]
+    assert items_post["summary"] == "Create Item"
+    assert "items" in items_post["tags"]
+```
+
+#### **Testing Deprecated Endpoints**
+```python
+def test_deprecated_endpoint_still_works():
+    client = TestClient(app)
+    response = client.get("/elements/")
+    
+    assert response.status_code == 200
+    assert response.json() == ["element1", "element2"]
+
+def test_deprecated_endpoint_marked_in_schema():
+    client = TestClient(app)
+    response = client.get("/openapi.json")
+    schema = response.json()
+    
+    # Check if endpoint is marked as deprecated
+    elements_get = schema["paths"]["/elements/"]["get"]
+    assert elements_get.get("deprecated") is True
+```
+
+### Production Considerations
+
+#### **API Versioning with Tags**
+```python
+class APIVersions(str, Enum):
+    V1 = "v1"
+    V2 = "v2"
+    BETA = "beta"
+
+@app.get("/v1/items/", tags=["v1", "items"], deprecated=True)
+async def get_items_v1():
+    """Legacy version - use v2 instead."""
+    pass
+
+@app.get("/v2/items/", tags=["v2", "items"])
+async def get_items_v2():
+    """Current version with enhanced features."""
+    pass
+
+@app.get("/beta/items/", tags=["beta", "items"])
+async def get_items_beta():
+    """Beta version - subject to change."""
+    pass
+```
+
+#### **Environment-Specific Configuration**
+```python
+from functools import lru_cache
+from pydantic import BaseSettings
+
+class Settings(BaseSettings):
+    app_name: str = "FastAPI App"
+    debug: bool = False
+    version: str = "1.0.0"
+    
+    class Config:
+        env_file = ".env"
+
+@lru_cache()
+def get_settings():
+    return Settings()
+
+def create_app():
+    settings = get_settings()
+    
+    app = FastAPI(
+        title=settings.app_name,
+        version=settings.version,
+        debug=settings.debug,
+        # Hide docs in production
+        docs_url="/docs" if settings.debug else None,
+        redoc_url="/redoc" if settings.debug else None,
+    )
+    
+    return app
+```
+
+### Key Learning Points
+- **Response models ensure data validation** and automatic API documentation generation
+- **Proper HTTP status codes** communicate operation results clearly to clients
+- **Tags organize API endpoints** for better documentation and developer experience
+- **Enum-based tags provide type safety** and maintainability advantages
+- **Rich docstrings with markdown** create comprehensive API documentation
+- **Deprecation patterns** enable graceful API evolution and backward compatibility
+- **Summary and description parameters** enhance endpoint discoverability
+- **OpenAPI schema generation** provides automatic documentation and client SDK generation
+- **Testing configuration** ensures API behavior matches documentation
+- **Production considerations** include versioning, environment configuration, and security
+
+This lesson establishes the foundation for building well-organized, thoroughly documented APIs that provide excellent developer experience and maintainable codebases!
