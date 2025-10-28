@@ -42,6 +42,7 @@ FastAPI_handson/
 ├── 7bodymultipleparameters.py
 ├── 8body_fields.py
 ├── 9bodynetedmodels.py
+├── 10extradatatypes.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -1002,3 +1003,238 @@ curl -X POST "http://localhost:8000/index-weights/" \
 - **Performance remains excellent** even with deep nesting and large collections
 
 This lesson demonstrates enterprise-level API design patterns essential for building sophisticated applications that handle complex, real-world data relationships!
+
+## Lesson 10: Extra Data Types
+
+### Overview
+- Advanced Python data types in FastAPI applications
+- UUID (Universally Unique Identifier) for unique identifiers
+- datetime objects for complete date and time information
+- timedelta for time duration and intervals
+- time objects for time-of-day without date
+- Automatic type validation, conversion, and serialization
+- Complex date/time calculations and scheduling systems
+
+### File: `10extradatatypes.py`
+
+This lesson demonstrates FastAPI's support for advanced Python data types including UUIDs, datetime objects, timedeltas, and time objects, with automatic validation and serialization.
+
+### Key Concepts Covered
+1. **UUID Type**: Unique identifier validation and conversion
+2. **datetime Type**: Complete date/time with timezone support
+3. **timedelta Type**: Duration and time interval calculations
+4. **time Type**: Time-of-day representation without date
+5. **Annotated Types**: Using Body() with advanced types
+6. **Automatic Serialization**: JSON conversion of complex types
+7. **Date/Time Arithmetic**: Complex calculations with temporal data
+
+### Running the Application
+```bash
+fastapi dev 10extradatatypes.py
+```
+
+### Advanced Data Types
+
+#### UUID (Universally Unique Identifier)
+```python
+item_id: UUID  # Path parameter with UUID validation
+```
+- **Format**: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+- **Validation**: Automatic UUID format checking
+- **Use Cases**: Unique identifiers, database keys, session IDs
+
+#### datetime (Date and Time)
+```python
+start_datetime: Annotated[datetime, Body()]
+```
+- **Format**: ISO 8601 (`2023-12-01T10:00:00`)
+- **Features**: Timezone support, multiple input formats
+- **Use Cases**: Timestamps, scheduling, event times
+
+#### timedelta (Time Duration)
+```python
+process_after: Annotated[timedelta, Body()]
+```
+- **Format**: `HH:MM:SS` or `D days, HH:MM:SS`
+- **Features**: Duration arithmetic, negative values
+- **Use Cases**: Delays, intervals, processing time
+
+#### time (Time of Day)
+```python
+repeat_at: Annotated[Union[time, None], Body()]
+```
+- **Format**: `HH:MM:SS` or `HH:MM`
+- **Features**: Time without date, optional fields
+- **Use Cases**: Daily schedules, recurring events
+
+### Endpoint
+- `PUT /items/{item_id}` - Configure item processing schedule with all advanced types
+
+### Example Usage
+
+#### Complete Request
+```bash
+curl -X PUT "http://localhost:8000/items/550e8400-e29b-41d4-a716-446655440000" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "start_datetime": "2023-12-01T10:00:00",
+    "end_datetime": "2023-12-01T15:30:00",
+    "process_after": "01:30:00",
+    "repeat_at": "09:00:00"
+  }'
+```
+
+#### Response with Calculations
+```json
+{
+  "item_id": "550e8400-e29b-41d4-a716-446655440000",
+  "start_datetime": "2023-12-01T10:00:00",
+  "end_datetime": "2023-12-01T15:30:00",
+  "process_after": "01:30:00",
+  "repeat_at": "09:00:00",
+  "start_process": "2023-12-01T11:30:00",
+  "duration": "04:00:00"
+}
+```
+
+### Data Type Validation Examples
+
+#### Valid Formats
+```bash
+# UUID formats
+"550e8400-e29b-41d4-a716-446655440000" ✓
+"6ba7b810-9dad-11d1-80b4-00c04fd430c8" ✓
+
+# datetime formats
+"2023-12-01T10:00:00" ✓
+"2023-12-01T10:00:00Z" ✓ (UTC)
+"2023-12-01T10:00:00+02:00" ✓ (with timezone)
+
+# timedelta formats
+"01:30:00" ✓ (1.5 hours)
+"2 days, 03:45:30" ✓ (2 days, 3 hours, 45 minutes, 30 seconds)
+"120" ✓ (120 seconds)
+
+# time formats
+"09:00:00" ✓
+"14:30" ✓
+null ✓ (optional field)
+```
+
+#### Validation Errors (422)
+```bash
+# Invalid UUID
+curl -X PUT "http://localhost:8000/items/not-a-uuid" \
+  -H "Content-Type: application/json" \
+  -d '{"start_datetime": "2023-12-01T10:00:00", ...}'
+# Returns: 422 "badly formed hexadecimal UUID string"
+
+# Invalid datetime
+curl -X PUT "http://localhost:8000/items/550e8400-e29b-41d4-a716-446655440000" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "start_datetime": "2023-13-01T25:00:00",
+    "end_datetime": "2023-12-01T15:30:00",
+    "process_after": "01:30:00"
+  }'
+# Returns: 422 "invalid datetime format"
+
+# Invalid timedelta
+curl -X PUT "http://localhost:8000/items/550e8400-e29b-41d4-a716-446655440000" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "start_datetime": "2023-12-01T10:00:00",
+    "end_datetime": "2023-12-01T15:30:00",
+    "process_after": "not-a-duration"
+  }'
+# Returns: 422 "invalid duration format"
+```
+
+### Date/Time Calculations
+
+The endpoint performs automatic calculations:
+
+```python
+# Input values
+start_datetime = "2023-12-01T10:00:00"
+process_after = "01:30:00"  # 1.5 hours
+end_datetime = "2023-12-01T15:30:00"
+
+# Calculations
+start_process = start_datetime + process_after  # "2023-12-01T11:30:00"
+duration = end_datetime - start_process         # "04:00:00"
+```
+
+### Real-World Applications
+
+#### Task Scheduling Systems
+```json
+{
+  "start_datetime": "2023-12-01T08:00:00",
+  "end_datetime": "2023-12-01T17:00:00",
+  "process_after": "00:15:00",
+  "repeat_at": "08:00:00"
+}
+```
+
+#### Event Management
+```json
+{
+  "start_datetime": "2023-12-15T19:00:00",
+  "end_datetime": "2023-12-15T23:00:00",
+  "process_after": "00:00:00",
+  "repeat_at": null
+}
+```
+
+#### Batch Processing
+```json
+{
+  "start_datetime": "2023-12-01T02:00:00",
+  "end_datetime": "2023-12-01T06:00:00", 
+  "process_after": "01:00:00",
+  "repeat_at": "02:00:00"
+}
+```
+
+### Advanced Features
+
+#### Automatic Type Conversion
+- **JSON to Python**: FastAPI automatically converts JSON strings to Python objects
+- **Python to JSON**: Response objects automatically serialized back to JSON
+- **Timezone Handling**: datetime objects preserve timezone information
+- **Validation**: Each type validated according to its specific format requirements
+
+#### OpenAPI Documentation
+- **Schema Generation**: All advanced types generate proper OpenAPI schemas
+- **Example Values**: Automatic example generation for each data type
+- **Format Specifications**: Clear format requirements in API documentation
+- **Validation Rules**: Error conditions documented automatically
+
+#### Error Handling
+- **Type-Specific Errors**: Each data type provides specific error messages
+- **Format Validation**: Clear feedback on format requirements
+- **422 Status Codes**: Standard validation error responses
+- **Detailed Messages**: Precise error descriptions for debugging
+
+### Use Cases Summary
+
+| Data Type | Primary Use Cases | Example Applications |
+|-----------|------------------|---------------------|
+| UUID | Unique identifiers | Database keys, session IDs, resource identifiers |
+| datetime | Complete timestamps | Event scheduling, logging, audit trails |
+| timedelta | Durations and delays | Processing windows, timeouts, intervals |
+| time | Daily schedules | Recurring events, business hours, alarms |
+
+### Key Learning Points
+- **FastAPI handles advanced types automatically** with validation and serialization
+- **UUID provides guaranteed unique identifiers** for distributed systems
+- **datetime objects support timezone-aware** date and time operations
+- **timedelta enables precise duration calculations** and time arithmetic
+- **time objects perfect for daily scheduling** without date dependencies
+- **Automatic JSON conversion** makes API responses clean and consistent
+- **Validation errors provide clear guidance** for correct format usage
+- **OpenAPI documentation** automatically includes proper type specifications
+- **Real-world scheduling systems** require these advanced temporal data types
+
+This lesson demonstrates how to build sophisticated time-based applications with proper data validation and complex temporal calculations!
