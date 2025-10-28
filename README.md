@@ -46,6 +46,7 @@ FastAPI_handson/
 ├── 11responsemodelreturntype.py
 ├── 12extramodels.py
 ├── 13responseandstatuscode.py
+├── 14requestforms.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -2036,3 +2037,331 @@ async def create_item(name: str):
 - **Status codes are part of the API contract** and should be documented and tested
 
 This lesson establishes the foundation for building well-designed APIs that communicate effectively with clients through proper HTTP status code usage, improving both developer experience and application reliability!
+
+---
+
+## Lesson 14: Request Forms
+
+### Overview
+- **Purpose**: Learn how to receive form data instead of JSON in FastAPI endpoints
+- **Key Concept**: Using `Form()` to handle HTML form submissions and `application/x-www-form-urlencoded` data
+- **Use Case**: Building traditional web forms, login systems, and file upload interfaces
+
+### File: `14requestforms.py`
+
+This lesson demonstrates how to handle form data in FastAPI applications using the `Form` class, which is essential for building web applications that need to process HTML form submissions.
+
+### Core Concepts
+
+#### **Form Data vs JSON**
+```python
+# JSON Request (previous lessons)
+{"username": "john", "password": "secret"}
+
+# Form Data (this lesson) 
+# Content-Type: application/x-www-form-urlencoded
+# username=john&password=secret
+```
+
+#### **The Form Import**
+```python
+from fastapi import FastAPI, Form
+
+app = FastAPI()
+```
+
+### Implementation Details
+
+#### **Login Endpoint with Form Data**
+```python
+@app.post("/login/")
+async def login(username: str = Form(), password: str = Form()):
+    """
+    User login endpoint accepting form data.
+    
+    This endpoint demonstrates how to receive form data using FastAPI's Form class.
+    It accepts 'username' and 'password' as form fields in a POST request and
+    returns a simple dictionary containing the provided username.
+    
+    Args:
+        username (str): The username provided in the form data
+        password (str): The password provided in the form data
+    """
+    return {"username": username, "message": "Login successful!"}
+```
+
+### Form Data Characteristics
+
+#### **Content Type**
+- **Form Data**: `application/x-www-form-urlencoded`
+- **JSON Data**: `application/json`
+- **Multipart Forms**: `multipart/form-data` (used with file uploads)
+
+#### **Data Format**
+```
+# URL-encoded form data
+username=johndoe&password=mysecretpassword&email=john%40example.com
+```
+
+### HTML Form Example
+
+#### **Frontend HTML Form**
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login Form</title>
+</head>
+<body>
+    <form action="/login/" method="post">
+        <label for="username">Username:</label>
+        <input type="text" id="username" name="username" required>
+        
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password" required>
+        
+        <button type="submit">Login</button>
+    </form>
+</body>
+</html>
+```
+
+### Advanced Form Patterns
+
+#### **Form with Validation**
+```python
+from fastapi import FastAPI, Form, HTTPException
+from pydantic import EmailStr
+
+@app.post("/register/")
+async def register(
+    username: str = Form(min_length=3, max_length=20),
+    email: EmailStr = Form(),
+    password: str = Form(min_length=8),
+    confirm_password: str = Form()
+):
+    if password != confirm_password:
+        raise HTTPException(
+            status_code=400, 
+            detail="Passwords do not match"
+        )
+    
+    return {
+        "username": username,
+        "email": email,
+        "message": "Registration successful!"
+    }
+```
+
+#### **Optional Form Fields**
+```python
+@app.post("/profile/")
+async def update_profile(
+    name: str = Form(),
+    bio: str = Form(None),  # Optional field
+    age: int = Form(None),  # Optional field
+    newsletter: bool = Form(False)  # Checkbox with default
+):
+    profile_data = {"name": name, "newsletter": newsletter}
+    
+    if bio:
+        profile_data["bio"] = bio
+    if age:
+        profile_data["age"] = age
+    
+    return profile_data
+```
+
+### Testing Form Endpoints
+
+#### **Using curl**
+```bash
+# Test the login endpoint
+curl -X POST "http://localhost:8000/login/" \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -d "username=johndoe&password=secret123"
+```
+
+#### **Using Python requests**
+```python
+import requests
+
+# Form data submission
+response = requests.post(
+    "http://localhost:8000/login/",
+    data={
+        "username": "johndoe",
+        "password": "secret123"
+    }
+)
+
+print(response.json())
+# Output: {"username": "johndoe", "message": "Login successful!"}
+```
+
+#### **Using FastAPI TestClient**
+```python
+from fastapi.testclient import TestClient
+
+def test_login_form():
+    client = TestClient(app)
+    response = client.post(
+        "/login/",
+        data={"username": "testuser", "password": "testpass"}
+    )
+    
+    assert response.status_code == 200
+    assert response.json() == {
+        "username": "testuser", 
+        "message": "Login successful!"
+    }
+```
+
+### Form Data vs JSON Comparison
+
+| Feature | Form Data | JSON |
+|---------|-----------|------|
+| **Content-Type** | `application/x-www-form-urlencoded` | `application/json` |
+| **Browser Support** | Native HTML forms | JavaScript required |
+| **File Uploads** | Requires `multipart/form-data` | Not supported |
+| **Nested Objects** | Limited support | Full support |
+| **Arrays** | Complex syntax | Native support |
+| **Use Cases** | Traditional web forms, login pages | REST APIs, SPAs |
+
+### When to Use Form Data
+
+#### **Ideal Scenarios**
+- **Traditional web applications** with server-side rendering
+- **Login and authentication** forms
+- **File upload** interfaces (with multipart forms)
+- **Progressive enhancement** where JavaScript might be disabled
+- **SEO-friendly forms** that work without JavaScript
+
+#### **Not Ideal For**
+- **Complex nested data** structures
+- **REST API** endpoints primarily consumed by JavaScript
+- **Mobile applications** that prefer JSON
+- **Real-time applications** requiring WebSocket connections
+
+### Security Considerations
+
+#### **CSRF Protection**
+```python
+from fastapi import FastAPI, Form, Depends
+from fastapi.security import HTTPBasic
+
+security = HTTPBasic()
+
+@app.post("/secure-login/")
+async def secure_login(
+    username: str = Form(),
+    password: str = Form(),
+    credentials: HTTPBasicCredentials = Depends(security)
+):
+    # Additional security layer
+    return {"username": username, "authenticated": True}
+```
+
+#### **Input Validation**
+```python
+import re
+
+@app.post("/safe-login/")
+async def safe_login(
+    username: str = Form(regex=r"^[a-zA-Z0-9_]+$"),
+    password: str = Form(min_length=8)
+):
+    # Username only allows alphanumeric and underscore
+    # Password must be at least 8 characters
+    return {"username": username, "status": "validated"}
+```
+
+### Real-World Applications
+
+#### **User Authentication System**
+```python
+@app.post("/auth/login/")
+async def authenticate_user(
+    email: EmailStr = Form(),
+    password: str = Form(),
+    remember_me: bool = Form(False)
+):
+    # Hash and verify password
+    # Create session or JWT token
+    # Handle "remember me" functionality
+    return {
+        "email": email,
+        "authenticated": True,
+        "remember_me": remember_me,
+        "token": "jwt_token_here"
+    }
+```
+
+#### **Contact Form**
+```python
+@app.post("/contact/")
+async def contact_form(
+    name: str = Form(),
+    email: EmailStr = Form(),
+    subject: str = Form(),
+    message: str = Form(max_length=1000),
+    phone: str = Form(None)
+):
+    # Send email notification
+    # Store in database
+    # Return confirmation
+    return {
+        "name": name,
+        "email": email,
+        "subject": subject,
+        "message": "Thank you for your message! We'll get back to you soon."
+    }
+```
+
+### Integration with Frontend Frameworks
+
+#### **Working with HTMX**
+```html
+<!-- HTMX form with dynamic response -->
+<form hx-post="/login/" hx-target="#result">
+    <input type="text" name="username" placeholder="Username" required>
+    <input type="password" name="password" placeholder="Password" required>
+    <button type="submit">Login</button>
+</form>
+<div id="result"></div>
+```
+
+#### **Progressive Enhancement**
+```python
+@app.post("/login/")
+async def login(
+    request: Request,
+    username: str = Form(),
+    password: str = Form()
+):
+    # Authenticate user
+    result = {"username": username, "message": "Login successful!"}
+    
+    # Check if request expects JSON (AJAX) or HTML
+    if "application/json" in request.headers.get("accept", ""):
+        return result
+    else:
+        # Return HTML template for traditional form submission
+        return templates.TemplateResponse(
+            "login_success.html", 
+            {"request": request, **result}
+        )
+```
+
+### Key Learning Points
+- **Form data is essential** for traditional web applications and HTML forms
+- **`Form()` class handles URL-encoded form data** instead of JSON payloads
+- **Form validation works similarly** to JSON validation with Pydantic
+- **Content-Type matters** - forms use `application/x-www-form-urlencoded`
+- **Browser compatibility** - forms work without JavaScript
+- **Security considerations** apply to form data just like JSON data
+- **Testing form endpoints** requires proper content-type headers
+- **Progressive enhancement** allows forms to work with and without JavaScript
+- **Form data is ideal** for authentication, file uploads, and traditional web interfaces
+
+This lesson provides the foundation for building web applications that can handle both modern JSON APIs and traditional HTML form submissions, ensuring broad compatibility and accessibility!
