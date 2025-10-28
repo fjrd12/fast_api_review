@@ -51,6 +51,8 @@ FastAPI_handson/
 ├── 16RequestFormFiles.py
 ├── 17HandlingErrors.py
 ├── 18pathoperationconfig.py
+├── 19jsoncompatibleencoder.py
+├── 20Bodyupdates.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -4556,3 +4558,1146 @@ def create_app():
 - **Production considerations** include versioning, environment configuration, and security
 
 This lesson establishes the foundation for building well-organized, thoroughly documented APIs that provide excellent developer experience and maintainable codebases!
+
+---
+
+## Lesson 19: JSON Compatible Encoder
+
+### Overview
+- **Purpose**: Learn to use FastAPI's `jsonable_encoder` utility for converting complex Python objects into JSON-compatible formats
+- **Key Concepts**: Data serialization, datetime handling, Pydantic model encoding, and database storage compatibility
+- **Use Cases**: Database storage, external API integration, data transmission, and complex object serialization
+
+### File: `19jsoncompatibleencoder.py`
+
+This lesson demonstrates how to handle complex data types that are not natively JSON-serializable, such as datetime objects and Pydantic models, using FastAPI's built-in encoding utilities.
+
+### Core Concepts
+
+#### **The JSON Serialization Challenge**
+```python
+# This fails with standard JSON serialization
+import json
+from datetime import datetime
+
+data = {
+    "title": "Sample Item",
+    "timestamp": datetime.now(),  # datetime is not JSON serializable
+    "description": "Test item"
+}
+
+# This would raise: TypeError: Object of type datetime is not JSON serializable
+# json.dumps(data)
+```
+
+#### **FastAPI's Solution: jsonable_encoder**
+```python
+from fastapi.encoders import jsonable_encoder
+from datetime import datetime
+
+# This works perfectly
+data = {
+    "title": "Sample Item",
+    "timestamp": datetime.now(),
+    "description": "Test item"
+}
+
+json_compatible_data = jsonable_encoder(data)
+# Result: {"title": "Sample Item", "timestamp": "2025-10-28T10:30:00.123456", "description": "Test item"}
+```
+
+### Implementation Details
+
+#### **Item Model with Complex Data Types**
+```python
+class Item(BaseModel):
+    """
+    Item model with complex data types for JSON encoding demonstration.
+    
+    This Pydantic model includes a datetime field to demonstrate how
+    jsonable_encoder handles complex data types that are not natively
+    JSON-serializable.
+    """
+    title: str
+    timestamp: datetime
+    description: Union[str, None] = None
+```
+
+#### **Update Endpoint with JSON Encoding**
+```python
+@app.put("/items/{id}")
+def update_item(id: str, item: Item):
+    """
+    Update an item using JSON-compatible encoding for storage.
+    
+    This endpoint demonstrates the proper use of jsonable_encoder to convert
+    a Pydantic model containing complex data types (like datetime) into a
+    JSON-compatible format suitable for database storage or transmission.
+    """
+    json_compatible_item_data = jsonable_encoder(item)
+    fake_db[id] = json_compatible_item_data
+    return json_compatible_item_data
+```
+
+### Data Type Conversion Examples
+
+#### **Datetime Objects**
+```python
+from datetime import datetime, date, time
+from fastapi.encoders import jsonable_encoder
+
+# Original datetime objects
+data = {
+    "created_at": datetime(2025, 10, 28, 10, 30, 45, 123456),
+    "due_date": date(2025, 12, 31),
+    "reminder_time": time(14, 30, 0)
+}
+
+encoded = jsonable_encoder(data)
+# Result:
+# {
+#     "created_at": "2025-10-28T10:30:45.123456",
+#     "due_date": "2025-12-31",
+#     "reminder_time": "14:30:00"
+# }
+```
+
+#### **Pydantic Models**
+```python
+from pydantic import BaseModel
+from typing import List
+
+class User(BaseModel):
+    name: str
+    email: str
+    created_at: datetime
+
+class Project(BaseModel):
+    name: str
+    users: List[User]
+    deadline: datetime
+
+# Complex nested structure
+project = Project(
+    name="API Development",
+    users=[
+        User(name="Alice", email="alice@example.com", created_at=datetime.now()),
+        User(name="Bob", email="bob@example.com", created_at=datetime.now())
+    ],
+    deadline=datetime(2025, 12, 31, 23, 59, 59)
+)
+
+# Encode entire structure
+encoded_project = jsonable_encoder(project)
+# All datetime objects and nested models are properly converted
+```
+
+### Advanced Encoding Patterns
+
+#### **Custom Encoder Configuration**
+```python
+from decimal import Decimal
+from uuid import UUID, uuid4
+
+class AdvancedItem(BaseModel):
+    id: UUID
+    title: str
+    price: Decimal
+    created_at: datetime
+    metadata: dict
+
+@app.post("/advanced-items/")
+async def create_advanced_item(item: AdvancedItem):
+    """Create item with advanced data types requiring encoding."""
+    
+    # The encoder handles UUID, Decimal, datetime, and nested structures
+    encoded_item = jsonable_encoder(item)
+    
+    # Store in database (simulated)
+    item_id = str(item.id)
+    fake_db[item_id] = encoded_item
+    
+    return {
+        "message": "Item created successfully",
+        "item_id": item_id,
+        "encoded_data": encoded_item
+    }
+
+# Example usage
+advanced_item = AdvancedItem(
+    id=uuid4(),
+    title="Premium Product",
+    price=Decimal("299.99"),
+    created_at=datetime.now(),
+    metadata={"category": "electronics", "featured": True}
+)
+```
+
+#### **Handling Collections and Nested Objects**
+```python
+from typing import Dict, List, Set
+from enum import Enum
+
+class Status(str, Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    PENDING = "pending"
+
+class ComplexData(BaseModel):
+    items_list: List[Item]
+    items_dict: Dict[str, Item]
+    tags: Set[str]
+    status: Status
+    created_at: datetime
+
+@app.post("/complex-data/")
+async def handle_complex_data(data: ComplexData):
+    """Handle complex nested data structures with encoding."""
+    
+    # jsonable_encoder recursively handles all nested structures
+    encoded_data = jsonable_encoder(data)
+    
+    # The result is a fully JSON-compatible dictionary
+    return {
+        "received_data": encoded_data,
+        "data_type": type(encoded_data).__name__,
+        "is_json_serializable": True
+    }
+```
+
+### Database Integration Patterns
+
+#### **SQLAlchemy Integration**
+```python
+from sqlalchemy import Column, Integer, String, DateTime, Text, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+
+Base = declarative_base()
+
+class ItemDB(Base):
+    __tablename__ = "items"
+    
+    id = Column(Integer, primary_key=True)
+    title = Column(String(255), nullable=False)
+    timestamp = Column(DateTime, nullable=False)
+    description = Column(Text, nullable=True)
+
+@app.put("/items/{item_id}/database")
+async def update_item_in_database(item_id: int, item: Item):
+    """Update item in actual database with proper encoding."""
+    
+    # Convert Pydantic model to dictionary with proper encoding
+    item_data = jsonable_encoder(item)
+    
+    # Use the encoded data to update database record
+    # The datetime is now in the correct format for database storage
+    db_item = session.query(ItemDB).filter(ItemDB.id == item_id).first()
+    
+    if db_item:
+        for key, value in item_data.items():
+            setattr(db_item, key, value)
+        session.commit()
+        
+    return {"message": "Item updated in database", "data": item_data}
+```
+
+#### **MongoDB Integration**
+```python
+from motor.motor_asyncio import AsyncIOMotorClient
+
+async def save_to_mongodb(collection_name: str, data: BaseModel):
+    """Save Pydantic model to MongoDB with proper encoding."""
+    
+    client = AsyncIOMotorClient("mongodb://localhost:27017")
+    db = client.myapp
+    collection = db[collection_name]
+    
+    # Convert to JSON-compatible format for MongoDB
+    document = jsonable_encoder(data)
+    
+    # MongoDB can now store the document without issues
+    result = await collection.insert_one(document)
+    
+    return {
+        "inserted_id": str(result.inserted_id),
+        "document": document
+    }
+
+@app.post("/items/mongodb")
+async def create_item_mongodb(item: Item):
+    """Create item in MongoDB using JSON encoding."""
+    result = await save_to_mongodb("items", item)
+    return result
+```
+
+### API Response Optimization
+
+#### **Conditional Encoding for Performance**
+```python
+from typing import Optional
+
+@app.get("/items/{item_id}")
+async def get_item_optimized(
+    item_id: str, 
+    include_metadata: bool = False,
+    format_dates: bool = True
+):
+    """Get item with conditional encoding for performance optimization."""
+    
+    item = fake_db.get(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    if format_dates:
+        # Use jsonable_encoder to ensure consistent date formatting
+        item = jsonable_encoder(item)
+    
+    if not include_metadata:
+        # Remove metadata fields if not requested
+        item = {k: v for k, v in item.items() if not k.startswith('_')}
+    
+    return item
+```
+
+#### **Custom Encoding Functions**
+```python
+from typing import Any
+
+def custom_encoder(obj: Any) -> Any:
+    """Custom encoding function for special cases."""
+    
+    if isinstance(obj, Decimal):
+        return float(obj)  # Convert Decimal to float
+    elif isinstance(obj, UUID):
+        return str(obj)  # Convert UUID to string
+    elif hasattr(obj, 'isoformat'):
+        return obj.isoformat()  # Handle datetime-like objects
+    else:
+        return jsonable_encoder(obj)  # Fallback to default encoder
+
+@app.post("/items/custom-encoding")
+async def create_item_custom_encoding(item: dict):
+    """Create item with custom encoding logic."""
+    
+    encoded_item = custom_encoder(item)
+    
+    # Store with custom encoding
+    item_id = str(uuid4())
+    fake_db[item_id] = encoded_item
+    
+    return {
+        "item_id": item_id,
+        "encoded_data": encoded_item
+    }
+```
+
+### Testing JSON Encoding
+
+#### **Unit Tests for Encoding**
+```python
+from fastapi.testclient import TestClient
+from datetime import datetime
+import json
+
+def test_json_encoding_with_datetime():
+    """Test that datetime objects are properly encoded."""
+    
+    test_item = {
+        "title": "Test Item",
+        "timestamp": datetime(2025, 10, 28, 10, 30, 45),
+        "description": "Test description"
+    }
+    
+    client = TestClient(app)
+    response = client.put("/items/test", json=jsonable_encoder(test_item))
+    
+    assert response.status_code == 200
+    result = response.json()
+    
+    # Verify datetime is encoded as ISO string
+    assert result["timestamp"] == "2025-10-28T10:30:45"
+    assert result["title"] == "Test Item"
+
+def test_complex_object_encoding():
+    """Test encoding of complex nested objects."""
+    
+    complex_data = {
+        "items": [
+            {"name": "Item 1", "created": datetime.now()},
+            {"name": "Item 2", "created": datetime.now()}
+        ],
+        "metadata": {
+            "version": 1,
+            "last_updated": datetime.now()
+        }
+    }
+    
+    encoded = jsonable_encoder(complex_data)
+    
+    # Verify the result can be JSON serialized
+    json_string = json.dumps(encoded)
+    assert json_string is not None
+    
+    # Verify structure is preserved
+    decoded = json.loads(json_string)
+    assert len(decoded["items"]) == 2
+    assert "last_updated" in decoded["metadata"]
+```
+
+### Error Handling with Encoding
+
+#### **Encoding Error Management**
+```python
+from typing import Any
+import logging
+
+logger = logging.getLogger(__name__)
+
+def safe_json_encoder(obj: Any) -> dict:
+    """Safely encode objects with error handling."""
+    
+    try:
+        return jsonable_encoder(obj)
+    except Exception as e:
+        logger.error(f"Encoding error for object {type(obj)}: {e}")
+        
+        # Return a safe fallback
+        return {
+            "error": "Encoding failed",
+            "object_type": str(type(obj)),
+            "fallback_repr": str(obj)
+        }
+
+@app.post("/items/safe-encoding")
+async def create_item_safe_encoding(item: Any):
+    """Create item with safe encoding that handles errors."""
+    
+    encoded_item = safe_json_encoder(item)
+    
+    # Check if encoding was successful
+    if "error" in encoded_item:
+        raise HTTPException(
+            status_code=422,
+            detail="Unable to encode the provided data"
+        )
+    
+    item_id = str(uuid4())
+    fake_db[item_id] = encoded_item
+    
+    return {
+        "item_id": item_id,
+        "status": "success",
+        "data": encoded_item
+    }
+```
+
+### Performance Considerations
+
+#### **Encoding Performance Optimization**
+```python
+import time
+from functools import lru_cache
+
+# Cache encoded results for frequently accessed data
+@lru_cache(maxsize=1000)
+def cached_encode(obj_hash: str, obj: tuple) -> dict:
+    """Cache encoded results for performance."""
+    return jsonable_encoder(dict(obj))
+
+@app.get("/items/performance-test")
+async def performance_test():
+    """Compare encoding performance with and without caching."""
+    
+    # Large dataset for testing
+    items = [
+        Item(
+            title=f"Item {i}",
+            timestamp=datetime.now(),
+            description=f"Description for item {i}"
+        )
+        for i in range(1000)
+    ]
+    
+    # Time standard encoding
+    start_time = time.time()
+    standard_encoded = [jsonable_encoder(item) for item in items]
+    standard_time = time.time() - start_time
+    
+    # Time with manual optimization
+    start_time = time.time()
+    optimized_encoded = []
+    for item in items:
+        # Pre-convert datetime to avoid repeated encoding
+        item_dict = item.dict()
+        item_dict['timestamp'] = item.timestamp.isoformat()
+        optimized_encoded.append(item_dict)
+    optimized_time = time.time() - start_time
+    
+    return {
+        "items_count": len(items),
+        "standard_encoding_time": standard_time,
+        "optimized_encoding_time": optimized_time,
+        "performance_improvement": f"{((standard_time - optimized_time) / standard_time * 100):.2f}%"
+    }
+```
+
+### Real-World Applications
+
+#### **API Response Formatting**
+```python
+from typing import List
+
+@app.get("/reports/daily")
+async def get_daily_report() -> dict:
+    """Generate daily report with proper data encoding."""
+    
+    # Simulate complex report data
+    report_data = {
+        "generated_at": datetime.now(),
+        "period": {
+            "start": date.today(),
+            "end": date.today()
+        },
+        "metrics": {
+            "total_items": 150,
+            "revenue": Decimal("12345.67"),
+            "top_items": [
+                {
+                    "id": uuid4(),
+                    "name": "Popular Item",
+                    "sales": 45,
+                    "last_sold": datetime.now()
+                }
+            ]
+        }
+    }
+    
+    # Encode for consistent API response
+    encoded_report = jsonable_encoder(report_data)
+    
+    return {
+        "report": encoded_report,
+        "format": "json_compatible",
+        "encoding_timestamp": datetime.now().isoformat()
+    }
+```
+
+#### **Data Export Functionality**
+```python
+import csv
+import io
+
+@app.get("/items/export/csv")
+async def export_items_csv():
+    """Export items to CSV format using JSON encoding."""
+    
+    # Get all items and encode them
+    items = list(fake_db.values())
+    encoded_items = [jsonable_encoder(item) for item in items]
+    
+    # Create CSV from encoded data
+    output = io.StringIO()
+    if encoded_items:
+        fieldnames = encoded_items[0].keys()
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(encoded_items)
+    
+    csv_content = output.getvalue()
+    output.close()
+    
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=items.csv"}
+    )
+```
+
+### Key Learning Points
+- **`jsonable_encoder` converts complex Python objects** to JSON-compatible formats automatically
+- **Datetime objects are converted to ISO format strings** for consistent serialization
+- **Pydantic models are recursively encoded** to plain dictionaries
+- **Database integration requires encoding** for proper data storage
+- **Performance optimization** can be achieved through caching and pre-conversion
+- **Error handling is essential** when dealing with unknown or complex data types
+- **Nested structures are handled automatically** by the encoder
+- **Custom encoding logic** can be implemented for specific use cases
+- **Testing ensures encoding works correctly** across different data types
+- **Production applications benefit** from consistent encoding patterns
+
+This lesson establishes the foundation for handling complex data serialization in FastAPI applications, ensuring compatibility with databases, external APIs, and JSON-based storage systems!
+
+---
+
+## Lesson 20: Body Updates
+
+### Overview
+- **Purpose**: Learn comprehensive body update patterns in FastAPI for both complete (PUT) and partial (PATCH) resource modifications
+- **Key Concepts**: HTTP semantics, Pydantic model manipulation, optional fields, and exclude_unset functionality
+- **Use Cases**: REST API resource management, data persistence, incremental updates, and efficient bandwidth usage
+
+### File: `20Bodyupdates.py`
+
+This lesson demonstrates the fundamental difference between PUT and PATCH operations, showcasing how to implement both full and partial updates using proper HTTP semantics and Pydantic model features.
+
+### Core Concepts
+
+#### **HTTP Update Methods Comparison**
+```python
+# PUT - Complete replacement (all fields)
+PUT /items/123
+{
+    "name": "Updated Item",
+    "description": "New description", 
+    "price": 99.99,
+    "tax": 15.0
+}
+
+# PATCH - Partial update (only specified fields)
+PATCH /items/123
+{
+    "price": 89.99  # Only update price
+}
+```
+
+#### **Optional Fields for Updates**
+```python
+class Item(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    tax: float = 10.5  # Default value
+```
+
+### Implementation Details
+
+#### **Item Model with Update Support**
+```python
+class Item(BaseModel):
+    """
+    Item model for demonstrating update operations with optional fields.
+    
+    This Pydantic model defines an item structure with optional fields
+    to demonstrate different update patterns (PUT vs PATCH) and how
+    to handle partial data updates properly.
+    """
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    tax: float = 10.5
+```
+
+#### **Read Operation (Foundation for Updates)**
+```python
+@app.get("/items/{item_id}", response_model=Item)
+async def read_item(item_id: str):
+    """
+    Retrieve an item by its ID.
+    
+    This endpoint provides read access to items stored in the simulated database.
+    It serves as the foundation for update operations by allowing clients to
+    retrieve current item state before modifications.
+    """
+    if item_id not in items:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return items[item_id]
+```
+
+#### **PUT Operation (Complete Replacement)**
+```python
+@app.put("/items/{item_id}", response_model=Item)
+async def update_item_with_put(item_id: str, item: Item):
+    """
+    Update an item completely using PUT method (full replacement).
+    
+    This endpoint implements the HTTP PUT semantics for complete resource
+    replacement. The entire item is replaced with the provided data,
+    following REST conventions for full updates.
+    """
+    if item_id not in items:
+        raise HTTPException(status_code=404, detail="Item not found")
+    items[item_id] = item.model_dump()
+    return items[item_id]
+```
+
+#### **PATCH Operation (Partial Update)**
+```python
+@app.patch("/items/{item_id}", response_model=Item)
+async def update_item_with_patch(item_id: str, item: Item):
+    """
+    Update an item partially using PATCH method (selective updates).
+    
+    This endpoint implements the HTTP PATCH semantics for partial resource
+    updates. Only the fields provided in the request body are updated,
+    while other fields remain unchanged.
+    """
+    if item_id not in items:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    # Get stored item and convert to Pydantic model
+    stored_item = Item.model_validate(items[item_id])
+    
+    # Get only the fields that were set using exclude_unset=True
+    update_data = item.model_dump(exclude_unset=True)
+    
+    # Create updated model using copy with updates
+    updated_item = stored_item.copy(update=update_data)
+    
+    # Store and return the updated item
+    items[item_id] = updated_item.model_dump()
+    return items[item_id]
+```
+
+### HTTP Semantics and Best Practices
+
+#### **PUT vs PATCH Comparison**
+
+| Aspect | PUT | PATCH |
+|--------|-----|-------|
+| **Purpose** | Complete replacement | Partial update |
+| **Fields Required** | All fields | Only changed fields |
+| **Idempotency** | Idempotent | Non-idempotent |
+| **Bandwidth** | Higher (full data) | Lower (partial data) |
+| **Use Case** | Full updates | Incremental changes |
+| **Risk** | Accidental data loss | Field-specific updates |
+
+#### **HTTP Status Codes for Updates**
+```python
+# Successful updates
+200 OK          # Resource updated successfully
+204 No Content  # Updated with no response body
+
+# Client errors
+400 Bad Request    # Invalid data format
+404 Not Found      # Resource doesn't exist
+409 Conflict       # Conflicting update
+422 Unprocessable Entity  # Validation errors
+
+# Server errors
+500 Internal Server Error  # Update operation failed
+```
+
+### Advanced Update Patterns
+
+#### **Conditional Updates with Validation**
+```python
+from datetime import datetime
+from typing import Optional
+
+class ItemWithTimestamp(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    tax: float = 10.5
+    last_modified: Optional[datetime] = None
+    version: Optional[int] = None
+
+@app.patch("/items/{item_id}/conditional")
+async def conditional_update(
+    item_id: str, 
+    item: ItemWithTimestamp,
+    if_match: Optional[str] = Header(None)
+):
+    """Update item with conditional logic and optimistic locking."""
+    
+    if item_id not in items:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    stored_item = ItemWithTimestamp.model_validate(items[item_id])
+    
+    # Optimistic locking check
+    if if_match and str(stored_item.version) != if_match:
+        raise HTTPException(
+            status_code=409,
+            detail="Resource has been modified by another request"
+        )
+    
+    # Validate business rules
+    update_data = item.model_dump(exclude_unset=True)
+    
+    if "price" in update_data and update_data["price"] < 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Price cannot be negative"
+        )
+    
+    # Add metadata
+    update_data["last_modified"] = datetime.now()
+    update_data["version"] = (stored_item.version or 0) + 1
+    
+    updated_item = stored_item.copy(update=update_data)
+    items[item_id] = updated_item.model_dump()
+    
+    return updated_item
+```
+
+#### **Bulk Update Operations**
+```python
+from typing import List, Dict
+
+class BulkUpdateRequest(BaseModel):
+    updates: Dict[str, Item]
+
+class BulkUpdateResponse(BaseModel):
+    success_count: int
+    error_count: int
+    errors: List[Dict[str, str]]
+
+@app.patch("/items/bulk")
+async def bulk_update_items(request: BulkUpdateRequest):
+    """Update multiple items in a single request."""
+    
+    results = BulkUpdateResponse(
+        success_count=0,
+        error_count=0,
+        errors=[]
+    )
+    
+    for item_id, item_data in request.updates.items():
+        try:
+            if item_id not in items:
+                results.errors.append({
+                    "item_id": item_id,
+                    "error": "Item not found"
+                })
+                results.error_count += 1
+                continue
+            
+            stored_item = Item.model_validate(items[item_id])
+            update_data = item_data.model_dump(exclude_unset=True)
+            updated_item = stored_item.copy(update=update_data)
+            items[item_id] = updated_item.model_dump()
+            
+            results.success_count += 1
+            
+        except Exception as e:
+            results.errors.append({
+                "item_id": item_id,
+                "error": str(e)
+            })
+            results.error_count += 1
+    
+    return results
+```
+
+### Pydantic Model Manipulation
+
+#### **Key Methods for Updates**
+
+| Method | Purpose | Example |
+|--------|---------|---------|
+| **model_validate()** | Create model from dict | `Item.model_validate(data)` |
+| **model_dump()** | Convert model to dict | `item.model_dump()` |
+| **model_dump(exclude_unset=True)** | Get only set fields | For PATCH operations |
+| **copy(update=data)** | Create updated copy | `item.copy(update=updates)` |
+
+#### **Working with exclude_unset**
+```python
+# Example: Only update price
+patch_data = {
+    "price": 99.99
+    # name, description, tax not provided
+}
+
+item = Item(**patch_data)
+print(item.model_dump())  
+# Output: {"name": None, "description": None, "price": 99.99, "tax": 10.5}
+
+print(item.model_dump(exclude_unset=True))  
+# Output: {"price": 99.99}  # Only explicitly set fields
+```
+
+#### **Advanced Model Operations**
+```python
+@app.patch("/items/{item_id}/advanced")
+async def advanced_patch(item_id: str, updates: dict):
+    """Advanced PATCH with custom validation and transformation."""
+    
+    if item_id not in items:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    # Get current item
+    stored_item = Item.model_validate(items[item_id])
+    
+    # Custom validation
+    if "price" in updates:
+        new_price = updates["price"]
+        if new_price is not None and new_price < 0:
+            raise HTTPException(422, "Price cannot be negative")
+        
+        # Business logic: adjust tax based on price
+        if new_price > 100:
+            updates["tax"] = new_price * 0.15  # 15% tax for expensive items
+    
+    # Apply updates
+    try:
+        updated_item = stored_item.copy(update=updates)
+        items[item_id] = updated_item.model_dump()
+        return updated_item
+    except ValueError as e:
+        raise HTTPException(422, f"Validation error: {str(e)}")
+```
+
+### Testing Update Operations
+
+#### **Testing PUT Operations**
+```python
+from fastapi.testclient import TestClient
+
+def test_put_complete_update():
+    client = TestClient(app)
+    
+    # Complete update with all fields
+    update_data = {
+        "name": "Updated Item",
+        "description": "New description",
+        "price": 99.99,
+        "tax": 15.0
+    }
+    
+    response = client.put("/items/foo", json=update_data)
+    
+    assert response.status_code == 200
+    result = response.json()
+    assert result["name"] == "Updated Item"
+    assert result["price"] == 99.99
+
+def test_put_with_missing_item():
+    client = TestClient(app)
+    
+    response = client.put("/items/nonexistent", json={
+        "name": "Test",
+        "price": 10.0
+    })
+    
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Item not found"
+```
+
+#### **Testing PATCH Operations**
+```python
+def test_patch_partial_update():
+    client = TestClient(app)
+    
+    # Update only the price
+    response = client.patch("/items/foo", json={"price": 75.0})
+    
+    assert response.status_code == 200
+    result = response.json()
+    assert result["price"] == 75.0
+    assert result["name"] == "Foo"  # Unchanged
+
+def test_patch_multiple_fields():
+    client = TestClient(app)
+    
+    # Update price and description
+    response = client.patch("/items/bar", json={
+        "price": 55.0,
+        "description": "Updated description"
+    })
+    
+    assert response.status_code == 200
+    result = response.json()
+    assert result["price"] == 55.0
+    assert result["description"] == "Updated description"
+    assert result["name"] == "Bar"  # Unchanged
+
+def test_patch_empty_update():
+    client = TestClient(app)
+    
+    # Empty update (no changes)
+    response = client.patch("/items/baz", json={})
+    
+    assert response.status_code == 200
+    # Item should remain unchanged
+```
+
+### Error Handling and Validation
+
+#### **Custom Validation Errors**
+```python
+from pydantic import validator
+
+class ValidatedItem(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    tax: float = 10.5
+    
+    @validator('price')
+    def price_must_be_positive(cls, v):
+        if v is not None and v < 0:
+            raise ValueError('Price must be positive')
+        return v
+    
+    @validator('name')
+    def name_must_not_be_empty(cls, v):
+        if v is not None and not v.strip():
+            raise ValueError('Name cannot be empty')
+        return v
+
+@app.patch("/items/{item_id}/validated")
+async def update_with_validation(item_id: str, item: ValidatedItem):
+    """Update item with custom validation."""
+    
+    try:
+        if item_id not in items:
+            raise HTTPException(404, "Item not found")
+        
+        stored_item = ValidatedItem.model_validate(items[item_id])
+        update_data = item.model_dump(exclude_unset=True)
+        updated_item = stored_item.copy(update=update_data)
+        
+        items[item_id] = updated_item.model_dump()
+        return updated_item
+        
+    except ValueError as e:
+        raise HTTPException(422, f"Validation error: {str(e)}")
+```
+
+### Performance Considerations
+
+#### **Efficient Update Patterns**
+```python
+import time
+from typing import Set
+
+# Track which fields actually changed
+def get_changed_fields(original: Item, updated: Item) -> Set[str]:
+    """Get the fields that actually changed between two items."""
+    original_data = original.model_dump()
+    updated_data = updated.model_dump()
+    
+    changed = set()
+    for field, new_value in updated_data.items():
+        if original_data.get(field) != new_value:
+            changed.add(field)
+    
+    return changed
+
+@app.patch("/items/{item_id}/efficient")
+async def efficient_update(item_id: str, item: Item):
+    """Efficient update that only processes changed fields."""
+    
+    if item_id not in items:
+        raise HTTPException(404, "Item not found")
+    
+    stored_item = Item.model_validate(items[item_id])
+    update_data = item.model_dump(exclude_unset=True)
+    
+    if not update_data:
+        # No changes requested
+        return stored_item
+    
+    updated_item = stored_item.copy(update=update_data)
+    changed_fields = get_changed_fields(stored_item, updated_item)
+    
+    if not changed_fields:
+        # No actual changes occurred
+        return stored_item
+    
+    # Log changes for audit trail
+    print(f"Updated item {item_id}, changed fields: {changed_fields}")
+    
+    items[item_id] = updated_item.model_dump()
+    return updated_item
+```
+
+### Real-World Applications
+
+#### **E-commerce Product Updates**
+```python
+class Product(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    stock_quantity: Optional[int] = None
+    category: Optional[str] = None
+    is_active: bool = True
+
+@app.patch("/products/{product_id}")
+async def update_product(product_id: str, product: Product):
+    """Update e-commerce product with business logic."""
+    
+    if product_id not in products:
+        raise HTTPException(404, "Product not found")
+    
+    stored_product = Product.model_validate(products[product_id])
+    update_data = product.model_dump(exclude_unset=True)
+    
+    # Business logic
+    if "price" in update_data:
+        new_price = update_data["price"]
+        if new_price != stored_product.price:
+            # Log price change for audit
+            audit_log.append({
+                "product_id": product_id,
+                "field": "price",
+                "old_value": stored_product.price,
+                "new_value": new_price,
+                "timestamp": datetime.now()
+            })
+    
+    if "stock_quantity" in update_data:
+        if update_data["stock_quantity"] == 0:
+            # Auto-deactivate out-of-stock products
+            update_data["is_active"] = False
+    
+    updated_product = stored_product.copy(update=update_data)
+    products[product_id] = updated_product.model_dump()
+    
+    return updated_product
+```
+
+#### **User Profile Updates**
+```python
+class UserProfile(BaseModel):
+    email: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    bio: Optional[str] = None
+    preferences: Optional[dict] = None
+
+@app.patch("/users/{user_id}/profile")
+async def update_user_profile(user_id: str, profile: UserProfile):
+    """Update user profile with privacy considerations."""
+    
+    if user_id not in user_profiles:
+        raise HTTPException(404, "User not found")
+    
+    stored_profile = UserProfile.model_validate(user_profiles[user_id])
+    update_data = profile.model_dump(exclude_unset=True)
+    
+    # Email change requires verification
+    if "email" in update_data:
+        new_email = update_data["email"]
+        if new_email != stored_profile.email:
+            # Send verification email
+            send_email_verification(user_id, new_email)
+            # Don't update email until verified
+            update_data.pop("email")
+    
+    updated_profile = stored_profile.copy(update=update_data)
+    user_profiles[user_id] = updated_profile.model_dump()
+    
+    return {
+        "profile": updated_profile,
+        "message": "Profile updated successfully",
+        "email_verification_sent": "email" in profile.model_dump(exclude_unset=True)
+    }
+```
+
+### Key Learning Points
+- **PUT operations replace the entire resource** while PATCH updates only specified fields
+- **exclude_unset=True is crucial for PATCH** to distinguish between null values and unset fields
+- **model_validate() creates Pydantic models from dict data** for type safety
+- **copy(update=data) provides safe model updates** without mutating original objects
+- **HTTP semantics matter** - use appropriate methods for different update types
+- **Optional fields enable flexible updates** while maintaining data integrity
+- **Error handling should be consistent** across all update operations
+- **Performance optimization** can be achieved by tracking actual changes
+- **Business logic integration** is often necessary in real-world update scenarios
+- **Testing both success and failure cases** ensures robust update functionality
+
+This lesson establishes the foundation for implementing proper resource update patterns in REST APIs, ensuring data integrity, efficient operations, and adherence to HTTP conventions!
