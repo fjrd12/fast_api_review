@@ -60,7 +60,7 @@ FastAPI_handson/
 
 ### File: `path_parameters.py`
 
-This lesson demonstrates how to capture and use path parameters in FastAPI endpoints.
+This lesson demonstrates how to build sophisticated time-based applications with proper data validation and complex temporal calculations!
 
 ## Lesson 11: Response Models and Return Types
 
