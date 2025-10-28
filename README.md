@@ -44,6 +44,7 @@ FastAPI_handson/
 ├── 9bodynetedmodels.py
 ├── 10extradatatypes.py
 ├── 11responsemodelreturntype.py
+├── 12extramodels.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -1508,3 +1509,239 @@ duration = end_datetime - start_process         # "04:00:00"
 - **Real-world scheduling systems** require these advanced temporal data types
 
 This lesson demonstrates how to build sophisticated time-based applications with proper data validation and complex temporal calculations!
+
+## Lesson 12: Extra Models - Multiple Related Models
+
+### Overview
+- Creating multiple related Pydantic models for different use cases
+- Model inheritance patterns and code reuse
+- Separating input, output, and database models
+- Password handling and security best practices
+- Response model filtering for data protection
+- Model composition and data transformation
+
+### File: `12extramodels.py`
+
+This lesson demonstrates how to create multiple related Pydantic models that serve different purposes in a FastAPI application, showcasing a common and powerful pattern for handling user data securely and efficiently.
+
+### Key Concepts Covered
+1. **Model Inheritance**: Using BaseModel inheritance for code reuse
+2. **Separation of Concerns**: Different models for different purposes
+3. **Password Security**: Proper handling of sensitive data
+4. **Response Filtering**: Automatic exclusion of sensitive fields
+5. **Data Transformation**: Converting between model types
+6. **Email Validation**: Using EmailStr for email validation
+
+### Running the Application
+```bash
+fastapi dev 12extramodels.py
+```
+
+### Model Design Pattern
+
+This lesson implements a four-model pattern commonly used in production applications:
+
+#### **UserBase Model (Base Class)**
+```python
+class UserBase(BaseModel):
+    username: str
+    email: EmailStr
+```
+- **Purpose**: Contains common fields shared across all user models
+- **Benefits**: Promotes code reuse and ensures consistency
+- **Fields**: Username and validated email address
+
+#### **UserIn Model (Input)**
+```python
+class UserIn(UserBase):
+    password: str
+```
+- **Purpose**: Accepts user input including raw password
+- **Use Case**: API request validation
+- **Security**: Contains plain text password (temporary)
+
+#### **UserOut Model (Output)**
+```python
+class UserOut(UserBase):
+    pass
+```
+- **Purpose**: Safe data for API responses
+- **Security**: Excludes all password-related fields
+- **Use Case**: Public API responses
+
+#### **UserInDB Model (Database)**
+```python
+class UserInDB(UserBase):
+    hashed_password: str
+```
+- **Purpose**: Database storage with hashed password
+- **Security**: Contains hashed password instead of plain text
+- **Use Case**: Internal data storage
+
+### Data Flow and Security
+
+#### **Complete User Creation Flow**
+1. **Input**: Client sends `UserIn` with plain text password
+2. **Processing**: Password gets hashed using security function
+3. **Storage**: Data stored as `UserInDB` with hashed password
+4. **Response**: Client receives `UserOut` without any password data
+
+#### **Security Features**
+- **Password Hashing**: Raw passwords are never stored
+- **Response Filtering**: Passwords never appear in API responses
+- **Email Validation**: Automatic email format validation
+- **Type Safety**: Strong typing throughout the flow
+
+### Example Usage
+
+#### **Create User Request**
+```bash
+curl -X POST "http://localhost:8000/user/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "johndoe",
+    "email": "johndoe@example.com",
+    "password": "supersecret123"
+  }'
+```
+
+#### **Safe API Response**
+```json
+{
+  "username": "johndoe",
+  "email": "johndoe@example.com"
+}
+```
+
+#### **Internal Database Storage**
+```json
+{
+  "username": "johndoe",
+  "email": "johndoe@example.com",
+  "hashed_password": "supersecretsupersecret123"
+}
+```
+
+### Key Functions
+
+#### **Password Hashing Function**
+```python
+async def fake_password_hasher(raw_password: str) -> str:
+    return "supersecret" + raw_password
+```
+- **Purpose**: Demonstrates password transformation
+- **Note**: In production, use bcrypt, Argon2, or scrypt
+- **Security**: Never store plain text passwords
+
+#### **User Save Function**
+```python
+async def fake_save_user(user_in: UserIn) -> UserInDB:
+    hashed_password = await fake_password_hasher(user_in.password)
+    user_in_db = UserInDB(**user_in.model_dump(), hashed_password=hashed_password)
+    return user_in_db
+```
+- **Purpose**: Converts input model to database model
+- **Process**: Hashes password and creates database-ready object
+- **Pattern**: Uses `model_dump()` for data conversion
+
+### Advanced Patterns Demonstrated
+
+#### **Model Composition with `model_dump()`**
+```python
+# Convert UserIn to dictionary and add hashed password
+user_data = user_in.model_dump()  # Extract all fields
+user_in_db = UserInDB(**user_data, hashed_password=hashed_password)
+```
+
+#### **Response Model Filtering**
+```python
+@app.post("/user/", response_model=UserOut)
+async def create_user(user_in: UserIn) -> UserOut:
+    user_saved = await fake_save_user(user_in)  # Returns UserInDB
+    return user_saved  # Automatically filtered to UserOut
+```
+
+### Security Best Practices
+
+#### **What This Pattern Prevents**
+- **Password Exposure**: Passwords never appear in API responses
+- **Data Leakage**: Sensitive fields are automatically excluded
+- **Plain Text Storage**: Passwords are always hashed before storage
+- **Accidental Disclosure**: Response models enforce safe data exposure
+
+#### **Production Considerations**
+- **Use Proper Hashing**: bcrypt, Argon2, or scrypt for password hashing
+- **Environment Secrets**: Store hashing salts in environment variables
+- **Database Constraints**: Add unique constraints for usernames/emails
+- **Input Validation**: Additional validation for password complexity
+- **Rate Limiting**: Prevent brute force attacks on user creation
+
+### Real-World Applications
+
+#### **User Management Systems**
+- **Registration**: Safe user account creation
+- **Authentication**: Secure password verification
+- **Profile Updates**: Partial data updates without password exposure
+
+#### **API Design Patterns**
+- **Public APIs**: Clean response models for external consumption
+- **Internal Services**: Rich data models for internal operations
+- **Database Layer**: Optimized models for storage and retrieval
+
+#### **Multi-Tenant Applications**
+- **User Isolation**: Separate user contexts with clean models
+- **Data Protection**: Automatic filtering of sensitive information
+- **Compliance**: GDPR-compliant data handling patterns
+
+### Validation and Error Handling
+
+#### **Automatic Validations**
+- **Email Format**: `EmailStr` ensures valid email addresses
+- **Required Fields**: Pydantic validates all required fields
+- **Type Checking**: Automatic type conversion and validation
+
+#### **Error Responses**
+```bash
+# Invalid email format
+{
+  "detail": [
+    {
+      "loc": ["body", "email"],
+      "msg": "field required",
+      "type": "value_error.missing"
+    }
+  ]
+}
+```
+
+### Benefits of This Pattern
+
+#### **Development Benefits**
+- **Code Reuse**: Base models eliminate duplication
+- **Type Safety**: Strong typing prevents runtime errors
+- **Clear Separation**: Each model has a single, clear purpose
+- **Maintainability**: Changes to base model propagate automatically
+
+#### **Security Benefits**
+- **Automatic Protection**: Response models prevent data leakage
+- **Consistent Handling**: Same security patterns across endpoints
+- **Defense in Depth**: Multiple layers of data protection
+- **Audit Trail**: Clear data transformation flow
+
+#### **API Design Benefits**
+- **Clean Interfaces**: Public APIs only expose necessary data
+- **Backward Compatibility**: Internal changes don't affect public API
+- **Documentation**: Models serve as living API documentation
+- **Client Generation**: Type-safe client code generation
+
+### Key Learning Points
+- **Multiple models enable secure and flexible API design** with clear separation of concerns
+- **Model inheritance promotes code reuse** while maintaining type safety
+- **Response model filtering provides automatic security** against data leakage
+- **Password hashing patterns ensure sensitive data protection** throughout the application
+- **Pydantic model_dump() enables easy data transformation** between different model types
+- **EmailStr provides built-in email validation** with clear error messages
+- **This pattern scales well for complex applications** with multiple data representations
+- **Security is built into the architecture** rather than being an afterthought
+
+This lesson establishes the foundation for building secure, maintainable APIs with proper data separation and protection patterns that are essential for production applications!
