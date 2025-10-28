@@ -53,6 +53,7 @@ FastAPI_handson/
 ├── 18pathoperationconfig.py
 ├── 19jsoncompatibleencoder.py
 ├── 20Bodyupdates.py
+├── 21Dependenciesstart.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -5701,3 +5702,479 @@ async def update_user_profile(user_id: str, profile: UserProfile):
 - **Testing both success and failure cases** ensures robust update functionality
 
 This lesson establishes the foundation for implementing proper resource update patterns in REST APIs, ensuring data integrity, efficient operations, and adherence to HTTP conventions!
+
+---
+
+## Lesson 21: Dependencies Introduction
+
+### Overview
+- **Purpose**: Learn the fundamental concepts of dependency injection in FastAPI for code reuse and better application architecture
+- **Key Concepts**: Depends() function, dependency injection patterns, code reusability, and DRY principles
+- **Use Cases**: Common parameters, authentication, database connections, shared business logic, and cross-cutting concerns
+
+### File: `21Dependenciesstart.py`
+
+This lesson introduces FastAPI's powerful dependency injection system, demonstrating how to create reusable components that can be shared across multiple endpoints for cleaner, more maintainable code.
+
+### Core Concepts
+
+#### **Dependency Injection Basics**
+```python
+from typing import Annotated
+from fastapi import Depends
+
+# Define a dependency function
+async def common_parameters(q: str | None = None, skip: int = 0, limit: int = 100):
+    return {"q": q, "skip": skip, "limit": limit}
+
+# Use the dependency in an endpoint
+@app.get("/items/")
+async def read_items(commons: Annotated[dict, Depends(common_parameters)]):
+    return commons
+```
+
+#### **The Depends() Function**
+```python
+# Depends() tells FastAPI to:
+# 1. Call the dependency function
+# 2. Pass the result to the endpoint function
+# 3. Handle parameter extraction and validation automatically
+```
+
+### Implementation Details
+
+#### **Common Parameters Dependency**
+```python
+async def common_parameters(q: str | None = None, skip: int = 0, limit: int = 100):
+    """
+    Common parameters dependency for pagination and filtering.
+    
+    This dependency function demonstrates the fundamental concept of dependency
+    injection in FastAPI. It encapsulates common query parameters that are
+    frequently used across multiple endpoints for pagination and search functionality.
+    """
+    return {"q": q, "skip": skip, "limit": limit}
+```
+
+#### **Items Endpoint with Dependency**
+```python
+@app.get("/items/")
+async def read_items(commons: Annotated[dict, Depends(common_parameters)]):
+    """
+    Retrieve items with common pagination and filtering parameters.
+    
+    This endpoint demonstrates how to use dependency injection to share
+    common parameters across multiple endpoints. The common_parameters
+    dependency provides pagination and search functionality.
+    """
+    return commons
+```
+
+#### **Users Endpoint with Same Dependency**
+```python
+@app.get("/users/")
+async def read_users(commons: Annotated[dict, Depends(common_parameters)]):
+    """
+    Retrieve users with the same common pagination and filtering parameters.
+    
+    This endpoint demonstrates how the same dependency can be reused across
+    different endpoints, providing consistent parameter handling for users
+    while maintaining the same pagination and search functionality as items.
+    """
+    return commons
+```
+
+### Dependency Injection Benefits
+
+#### **Code Reuse and DRY Principles**
+
+| Without Dependencies | With Dependencies |
+|---------------------|-------------------|
+| Repeated parameter definitions | Single dependency function |
+| Duplicated validation logic | Centralized validation |
+| Inconsistent defaults | Unified default values |
+| Harder to maintain | Easy to modify centrally |
+| Testing complexity | Simplified testing |
+
+#### **Before Dependencies (Repetitive Code)**
+```python
+@app.get("/items/")
+async def read_items(q: str | None = None, skip: int = 0, limit: int = 100):
+    return {"q": q, "skip": skip, "limit": limit}
+
+@app.get("/users/")
+async def read_users(q: str | None = None, skip: int = 0, limit: int = 100):
+    return {"q": q, "skip": skip, "limit": limit}
+
+@app.get("/products/")
+async def read_products(q: str | None = None, skip: int = 0, limit: int = 100):
+    return {"q": q, "skip": skip, "limit": limit}
+```
+
+#### **After Dependencies (Clean Code)**
+```python
+# Define once
+async def common_parameters(q: str | None = None, skip: int = 0, limit: int = 100):
+    return {"q": q, "skip": skip, "limit": limit}
+
+# Reuse everywhere
+@app.get("/items/")
+async def read_items(commons: Annotated[dict, Depends(common_parameters)]):
+    return commons
+
+@app.get("/users/")
+async def read_users(commons: Annotated[dict, Depends(common_parameters)]):
+    return commons
+
+@app.get("/products/")
+async def read_products(commons: Annotated[dict, Depends(common_parameters)]):
+    return commons
+```
+
+### Dependency Injection Flow
+
+#### **Step-by-Step Process**
+```python
+# 1. Client makes request
+GET /items/?q=laptop&skip=10&limit=20
+
+# 2. FastAPI extracts query parameters
+{
+    "q": "laptop",
+    "skip": 10,
+    "limit": 20
+}
+
+# 3. FastAPI calls dependency function with parameters
+result = await common_parameters(q="laptop", skip=10, limit=20)
+
+# 4. Dependency returns processed data
+{"q": "laptop", "skip": 10, "limit": 20}
+
+# 5. FastAPI injects result into endpoint function
+await read_items(commons={"q": "laptop", "skip": 10, "limit": 20})
+
+# 6. Endpoint function processes and returns response
+```
+
+### Advanced Dependency Patterns
+
+#### **Nested Dependencies**
+```python
+async def get_current_user(token: str = Header(...)):
+    """Dependency to get current user from token."""
+    # Validate token and return user
+    return {"user_id": 123, "username": "john"}
+
+async def get_user_permissions(
+    user: dict = Depends(get_current_user)
+):
+    """Dependency that depends on another dependency."""
+    # Get permissions for the user
+    return {"permissions": ["read", "write"]}
+
+@app.get("/protected-items/")
+async def read_protected_items(
+    commons: Annotated[dict, Depends(common_parameters)],
+    permissions: Annotated[dict, Depends(get_user_permissions)]
+):
+    """Endpoint using multiple dependencies."""
+    return {
+        "items": f"Filtered by: {commons}",
+        "user_permissions": permissions
+    }
+```
+
+#### **Class-Based Dependencies**
+```python
+class CommonQueryParams:
+    """Class-based dependency for complex parameter handling."""
+    
+    def __init__(self, q: str | None = None, skip: int = 0, limit: int = 100):
+        self.q = q
+        self.skip = skip
+        self.limit = limit
+        
+    def to_dict(self):
+        return {"q": self.q, "skip": self.skip, "limit": self.limit}
+    
+    def validate(self):
+        if self.skip < 0:
+            raise HTTPException(400, "Skip cannot be negative")
+        if self.limit > 1000:
+            raise HTTPException(400, "Limit cannot exceed 1000")
+        return self
+
+@app.get("/items/validated/")
+async def read_items_validated(
+    params: Annotated[CommonQueryParams, Depends(CommonQueryParams)]
+):
+    """Endpoint using class-based dependency with validation."""
+    validated_params = params.validate()
+    return validated_params.to_dict()
+```
+
+#### **Database Connection Dependencies**
+```python
+from sqlalchemy.orm import Session
+from database import SessionLocal
+
+def get_db():
+    """Database session dependency."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.get("/items/from-db/")
+async def read_items_from_db(
+    commons: Annotated[dict, Depends(common_parameters)],
+    db: Session = Depends(get_db)
+):
+    """Endpoint using both pagination and database dependencies."""
+    
+    # Use commons for database query
+    query = db.query(Item)
+    
+    if commons["q"]:
+        query = query.filter(Item.name.contains(commons["q"]))
+    
+    items = query.offset(commons["skip"]).limit(commons["limit"]).all()
+    
+    return {
+        "items": [item.dict() for item in items],
+        "pagination": {
+            "skip": commons["skip"],
+            "limit": commons["limit"],
+            "query": commons["q"]
+        }
+    }
+```
+
+### Testing with Dependencies
+
+#### **Dependency Override for Testing**
+```python
+from fastapi.testclient import TestClient
+
+# Test dependency that returns fixed data
+def override_common_parameters():
+    return {"q": "test", "skip": 0, "limit": 10}
+
+def test_read_items_with_dependency_override():
+    # Override the dependency for testing
+    app.dependency_overrides[common_parameters] = override_common_parameters
+    
+    client = TestClient(app)
+    response = client.get("/items/")
+    
+    assert response.status_code == 200
+    assert response.json() == {"q": "test", "skip": 0, "limit": 10}
+    
+    # Clean up
+    app.dependency_overrides = {}
+
+def test_dependency_with_parameters():
+    client = TestClient(app)
+    response = client.get("/items/?q=laptop&skip=5&limit=15")
+    
+    assert response.status_code == 200
+    result = response.json()
+    assert result["q"] == "laptop"
+    assert result["skip"] == 5
+    assert result["limit"] == 15
+```
+
+#### **Testing Individual Dependencies**
+```python
+import pytest
+
+def test_common_parameters_function():
+    """Test the dependency function directly."""
+    
+    # Test with default values
+    result = await common_parameters()
+    assert result == {"q": None, "skip": 0, "limit": 100}
+    
+    # Test with custom values
+    result = await common_parameters(q="search", skip=10, limit=50)
+    assert result == {"q": "search", "skip": 10, "limit": 50}
+
+def test_common_parameters_validation():
+    """Test parameter validation in dependency."""
+    
+    # These should work
+    assert await common_parameters(skip=0, limit=100)
+    assert await common_parameters(q="", skip=0, limit=1)
+    
+    # Test edge cases
+    assert await common_parameters(skip=0, limit=0)  # Edge case
+```
+
+### Dependency Caching
+
+#### **Caching Expensive Dependencies**
+```python
+from functools import lru_cache
+
+@lru_cache()
+def get_settings():
+    """Cached dependency for application settings."""
+    # This is called only once and cached
+    return Settings()
+
+async def get_expensive_computation(
+    settings: Settings = Depends(get_settings)
+):
+    """Dependency using cached settings."""
+    # Expensive operation using settings
+    return perform_computation(settings)
+
+@app.get("/computed-data/")
+async def get_computed_data(
+    data: dict = Depends(get_expensive_computation)
+):
+    """Endpoint using cached expensive dependency."""
+    return data
+```
+
+#### **Request-Scoped Caching**
+```python
+async def get_current_user_cached(token: str = Header(...)):
+    """Cache user data for the duration of the request."""
+    # This would typically fetch from database
+    user_data = fetch_user_from_db(token)
+    return user_data
+
+# FastAPI automatically caches this within a single request
+@app.get("/user-profile/")
+async def get_user_profile(user: dict = Depends(get_current_user_cached)):
+    return user
+
+@app.get("/user-settings/")
+async def get_user_settings(user: dict = Depends(get_current_user_cached)):
+    # Same user dependency, but cached within request
+    return {"user_id": user["id"], "settings": get_settings_for_user(user)}
+```
+
+### Real-World Applications
+
+#### **Authentication Dependencies**
+```python
+from jose import JWTError, jwt
+from fastapi import HTTPException, status
+
+async def verify_token(token: str = Header(...)):
+    """Verify JWT token dependency."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token"
+            )
+        return {"user_id": user_id}
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token"
+        )
+
+async def get_current_user(token_data: dict = Depends(verify_token)):
+    """Get current user from verified token."""
+    user = get_user_by_id(token_data["user_id"])
+    if not user:
+        raise HTTPException(404, "User not found")
+    return user
+
+@app.get("/protected/")
+async def protected_endpoint(
+    current_user: dict = Depends(get_current_user),
+    commons: dict = Depends(common_parameters)
+):
+    """Protected endpoint requiring authentication."""
+    return {
+        "message": f"Hello {current_user['username']}",
+        "pagination": commons
+    }
+```
+
+#### **Rate Limiting Dependencies**
+```python
+from time import time
+from collections import defaultdict
+
+# Simple rate limiter (use Redis in production)
+request_times = defaultdict(list)
+
+async def rate_limit(request: Request, limit: int = 100, window: int = 3600):
+    """Rate limiting dependency."""
+    client_ip = request.client.host
+    now = time()
+    
+    # Clean old requests
+    request_times[client_ip] = [
+        req_time for req_time in request_times[client_ip]
+        if now - req_time < window
+    ]
+    
+    if len(request_times[client_ip]) >= limit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded"
+        )
+    
+    request_times[client_ip].append(now)
+    return {"requests_remaining": limit - len(request_times[client_ip])}
+
+@app.get("/rate-limited/")
+async def rate_limited_endpoint(
+    rate_info: dict = Depends(rate_limit),
+    commons: dict = Depends(common_parameters)
+):
+    """Endpoint with rate limiting."""
+    return {
+        "data": "This endpoint is rate limited",
+        "rate_info": rate_info,
+        "pagination": commons
+    }
+```
+
+### Performance Considerations
+
+#### **Dependency Optimization**
+```python
+# Efficient dependency design
+async def optimized_common_parameters(
+    q: str | None = None, 
+    skip: int = Query(0, ge=0),  # Built-in validation
+    limit: int = Query(100, ge=1, le=1000)  # Limit constraints
+):
+    """Optimized dependency with built-in validation."""
+    return {
+        "q": q.strip() if q else None,  # Clean query string
+        "skip": skip,
+        "limit": min(limit, 1000)  # Enforce maximum limit
+    }
+
+# Fast dependency for simple cases
+def simple_pagination(skip: int = 0, limit: int = 100):
+    """Synchronous dependency for simple cases."""
+    return {"skip": skip, "limit": limit}
+```
+
+### Key Learning Points
+- **Dependencies enable code reuse** and eliminate duplication across endpoints
+- **Depends() function handles automatic injection** of dependency results into endpoints
+- **Annotated type hints improve clarity** and provide better IDE support
+- **Dependencies can be nested** for complex application architectures
+- **Testing is simplified** through dependency override mechanisms
+- **Class-based dependencies** provide more complex parameter handling
+- **Caching improves performance** for expensive dependency operations
+- **Real-world applications** use dependencies for authentication, rate limiting, and database connections
+- **Parameter validation** can be centralized in dependency functions
+- **FastAPI automatically handles** parameter extraction and dependency resolution
+
+This lesson establishes the foundation for using FastAPI's dependency injection system to build cleaner, more maintainable applications with reusable components and better separation of concerns!
