@@ -49,6 +49,7 @@ FastAPI_handson/
 ├── 14requestforms.py
 ├── 15requestfiles.py
 ├── 16RequestFormFiles.py
+├── 17HandlingErrors.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -3463,3 +3464,556 @@ async def process_files_background(
 - **Performance optimization** involves streaming large files and async processing
 
 This lesson demonstrates how to build sophisticated upload systems that combine the flexibility of form data with the power of file uploads, enabling rich, interactive applications with comprehensive data submission capabilities!
+
+---
+
+## Lesson 17: Handling Errors
+
+### Overview
+- **Purpose**: Learn comprehensive error handling patterns in FastAPI applications
+- **Key Concepts**: HTTP exceptions, custom exceptions, exception handlers, and error response formatting
+- **Use Cases**: API error management, user-friendly error messages, debugging support, and robust application design
+
+### File: `17HandlingErrors.py`
+
+This lesson demonstrates various error handling techniques in FastAPI, from basic HTTP exceptions to sophisticated custom exception systems with dedicated handlers.
+
+### Core Concepts
+
+#### **HTTP Exception Basics**
+```python
+from fastapi import HTTPException
+
+# Basic HTTP exception
+if item_id not in items:
+    raise HTTPException(status_code=404, detail="Item not found")
+```
+
+#### **HTTP Exception with Custom Headers**
+```python
+# Exception with additional headers
+raise HTTPException(
+    status_code=404, 
+    detail="Item not found",
+    headers={"X-Error": "There goes my error"}
+)
+```
+
+#### **Custom Exception Classes**
+```python
+class UnicornException(Exception):
+    def __init__(self, name: str):
+        self.name = name
+        super().__init__(f"Unicorn '{name}' caused an error")
+```
+
+### Implementation Details
+
+#### **Basic Error Handling Endpoint**
+```python
+@app.get("/items/{item_id}")
+async def read_item(item_id: str):
+    """
+    Retrieve an item by ID with basic error handling.
+    
+    This endpoint demonstrates basic HTTP exception handling in FastAPI.
+    It retrieves an item from the sample data store and raises a 404 error
+    if the item is not found.
+    """
+    if item_id not in items:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return {"item": items[item_id]}
+```
+
+#### **Error Handling with Custom Headers**
+```python
+@app.get("/items-header/{item_id}")
+async def read_item_header(item_id: str):
+    """
+    Retrieve an item by ID with custom headers in error responses.
+    
+    This endpoint demonstrates how to include custom headers in HTTP exception
+    responses. It's useful for providing additional metadata or debugging
+    information in error responses.
+    """
+    if item_id not in items:
+        raise HTTPException(
+            status_code=404, 
+            detail="Item not found",
+            headers={"X-Error": "There goes my error"}
+        )
+    return {"item": items[item_id]}
+```
+
+#### **Custom Exception Handler**
+```python
+@app.exception_handler(UnicornException)
+async def unicorn_exception_handler(request: Request, exc: UnicornException):
+    """
+    Custom exception handler for UnicornException.
+    
+    This function demonstrates how to create custom exception handlers in FastAPI
+    that provide specific handling for custom exception types.
+    """
+    return JSONResponse(
+        status_code=418,
+        content={"message": f"The '{exc.name}' caused an error!"},
+    )
+```
+
+### Error Handling Patterns
+
+#### **HTTP Status Code Guidelines**
+
+| Status Code | Use Case | Example |
+|-------------|----------|---------|
+| **400 Bad Request** | Invalid input data | Missing required fields |
+| **401 Unauthorized** | Authentication required | Invalid API key |
+| **403 Forbidden** | Permission denied | Insufficient privileges |
+| **404 Not Found** | Resource doesn't exist | Item ID not found |
+| **409 Conflict** | Resource conflict | Duplicate email address |
+| **422 Unprocessable Entity** | Validation errors | Invalid email format |
+| **429 Too Many Requests** | Rate limiting | API quota exceeded |
+| **500 Internal Server Error** | Server errors | Database connection failed |
+
+#### **Comprehensive Error Handling Example**
+```python
+from enum import Enum
+from typing import Optional
+
+class ErrorCode(str, Enum):
+    ITEM_NOT_FOUND = "ITEM_NOT_FOUND"
+    INVALID_INPUT = "INVALID_INPUT"
+    PERMISSION_DENIED = "PERMISSION_DENIED"
+
+class APIError(Exception):
+    def __init__(
+        self, 
+        message: str, 
+        error_code: ErrorCode, 
+        status_code: int = 400,
+        headers: Optional[dict] = None
+    ):
+        self.message = message
+        self.error_code = error_code
+        self.status_code = status_code
+        self.headers = headers or {}
+        super().__init__(message)
+
+@app.exception_handler(APIError)
+async def api_error_handler(request: Request, exc: APIError):
+    return JSONResponse(
+        status_code=exc.status_code,
+        headers=exc.headers,
+        content={
+            "error": {
+                "code": exc.error_code,
+                "message": exc.message,
+                "timestamp": datetime.now().isoformat(),
+                "path": str(request.url)
+            }
+        }
+    )
+
+@app.get("/items/{item_id}")
+async def get_item_with_detailed_errors(item_id: str):
+    if not item_id:
+        raise APIError(
+            message="Item ID is required",
+            error_code=ErrorCode.INVALID_INPUT,
+            status_code=400
+        )
+    
+    if item_id not in items:
+        raise APIError(
+            message=f"Item with ID '{item_id}' was not found",
+            error_code=ErrorCode.ITEM_NOT_FOUND,
+            status_code=404
+        )
+    
+    return {"item": items[item_id]}
+```
+
+### Advanced Error Handling Techniques
+
+#### **Validation Error Customization**
+```python
+from fastapi import Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Custom handler for Pydantic validation errors."""
+    errors = []
+    for error in exc.errors():
+        errors.append({
+            "field": " -> ".join(str(loc) for loc in error["loc"]),
+            "message": error["msg"],
+            "type": error["type"]
+        })
+    
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": "Validation failed",
+            "details": errors,
+            "timestamp": datetime.now().isoformat()
+        }
+    )
+```
+
+#### **Global Exception Handler**
+```python
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Global handler for unexpected exceptions."""
+    
+    # Log the error for debugging
+    logger.error(f"Unexpected error: {exc}", exc_info=True)
+    
+    # Don't expose internal error details in production
+    if app.debug:
+        error_detail = str(exc)
+    else:
+        error_detail = "An internal server error occurred"
+    
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal Server Error",
+            "message": error_detail,
+            "timestamp": datetime.now().isoformat()
+        }
+    )
+```
+
+#### **Error Logging and Monitoring**
+```python
+import logging
+from contextlib import asynccontextmanager
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class LoggedHTTPException(HTTPException):
+    """HTTPException that automatically logs errors."""
+    
+    def __init__(self, status_code: int, detail: str, **kwargs):
+        super().__init__(status_code, detail, **kwargs)
+        logger.error(f"HTTP {status_code}: {detail}")
+
+@app.get("/items/{item_id}/logged")
+async def get_item_with_logging(item_id: str):
+    """Endpoint with automatic error logging."""
+    if item_id not in items:
+        raise LoggedHTTPException(
+            status_code=404,
+            detail=f"Item '{item_id}' not found"
+        )
+    
+    logger.info(f"Successfully retrieved item: {item_id}")
+    return {"item": items[item_id]}
+```
+
+### Error Response Formats
+
+#### **Standard Error Response**
+```json
+{
+    "detail": "Item not found"
+}
+```
+
+#### **Detailed Error Response**
+```json
+{
+    "error": {
+        "code": "ITEM_NOT_FOUND",
+        "message": "Item with ID 'xyz' was not found",
+        "timestamp": "2025-10-28T10:30:00Z",
+        "path": "/items/xyz"
+    }
+}
+```
+
+#### **Validation Error Response**
+```json
+{
+    "error": "Validation failed",
+    "details": [
+        {
+            "field": "email",
+            "message": "field required",
+            "type": "value_error.missing"
+        },
+        {
+            "field": "age",
+            "message": "ensure this value is greater than 0",
+            "type": "value_error.number.not_gt"
+        }
+    ],
+    "timestamp": "2025-10-28T10:30:00Z"
+}
+```
+
+### Testing Error Handling
+
+#### **Testing HTTP Exceptions**
+```python
+from fastapi.testclient import TestClient
+
+def test_item_not_found():
+    client = TestClient(app)
+    response = client.get("/items/nonexistent")
+    
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Item not found"}
+
+def test_item_not_found_with_headers():
+    client = TestClient(app)
+    response = client.get("/items-header/nonexistent")
+    
+    assert response.status_code == 404
+    assert response.headers["X-Error"] == "There goes my error"
+    assert response.json() == {"detail": "Item not found"}
+```
+
+#### **Testing Custom Exceptions**
+```python
+def test_unicorn_exception():
+    client = TestClient(app)
+    response = client.get("/unicorns/yolo")
+    
+    assert response.status_code == 418
+    assert response.json() == {"message": "The 'yolo' caused an error!"}
+
+def test_unicorn_success():
+    client = TestClient(app)
+    response = client.get("/unicorns/sparkles")
+    
+    assert response.status_code == 200
+    assert response.json() == {"unicorn_name": "sparkles"}
+```
+
+#### **Testing Validation Errors**
+```python
+def test_validation_error():
+    client = TestClient(app)
+    response = client.post("/users/", json={"name": ""})  # Invalid data
+    
+    assert response.status_code == 422
+    assert "validation" in response.json()["error"].lower()
+```
+
+### Error Handling Best Practices
+
+#### **Security Considerations**
+```python
+@app.exception_handler(Exception)
+async def secure_exception_handler(request: Request, exc: Exception):
+    """Secure exception handler that doesn't leak sensitive information."""
+    
+    # Log full error details for debugging
+    logger.error(f"Error on {request.url}: {exc}", exc_info=True)
+    
+    # Determine what to expose to client
+    if isinstance(exc, HTTPException):
+        # HTTPException details are safe to expose
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail}
+        )
+    elif isinstance(exc, RequestValidationError):
+        # Validation errors are safe to expose
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Validation error", "errors": exc.errors()}
+        )
+    else:
+        # Don't expose internal error details
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"}
+        )
+```
+
+#### **Rate Limiting with Error Handling**
+```python
+from time import time
+from collections import defaultdict
+
+# Simple rate limiting (use Redis in production)
+request_counts = defaultdict(list)
+
+class RateLimitExceeded(HTTPException):
+    def __init__(self):
+        super().__init__(
+            status_code=429,
+            detail="Rate limit exceeded",
+            headers={"Retry-After": "60"}
+        )
+
+def check_rate_limit(client_id: str, limit: int = 100, window: int = 3600):
+    """Check if client has exceeded rate limit."""
+    now = time()
+    client_requests = request_counts[client_id]
+    
+    # Remove old requests outside the window
+    client_requests[:] = [req_time for req_time in client_requests if now - req_time < window]
+    
+    if len(client_requests) >= limit:
+        raise RateLimitExceeded()
+    
+    client_requests.append(now)
+
+@app.get("/rate-limited-items/{item_id}")
+async def get_item_with_rate_limit(item_id: str, request: Request):
+    """Endpoint with rate limiting."""
+    client_ip = request.client.host
+    check_rate_limit(client_ip)
+    
+    if item_id not in items:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    return {"item": items[item_id]}
+```
+
+### Production Error Handling
+
+#### **Health Check Endpoints**
+```python
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring."""
+    try:
+        # Check database connection, external services, etc.
+        # This is a simplified example
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "version": "1.0.0"
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="Service temporarily unavailable"
+        )
+```
+
+#### **Error Metrics and Monitoring**
+```python
+from prometheus_client import Counter, Histogram
+
+# Metrics for monitoring
+error_counter = Counter('http_errors_total', 'Total HTTP errors', ['status_code', 'endpoint'])
+response_time = Histogram('http_request_duration_seconds', 'Request duration')
+
+@app.middleware("http")
+async def error_monitoring_middleware(request: Request, call_next):
+    """Middleware to collect error metrics."""
+    start_time = time()
+    
+    try:
+        response = await call_next(request)
+        
+        # Record metrics
+        if response.status_code >= 400:
+            error_counter.labels(
+                status_code=response.status_code,
+                endpoint=request.url.path
+            ).inc()
+        
+        response_time.observe(time() - start_time)
+        return response
+        
+    except Exception as e:
+        # Record unhandled errors
+        error_counter.labels(status_code=500, endpoint=request.url.path).inc()
+        response_time.observe(time() - start_time)
+        raise
+```
+
+### Real-World Error Scenarios
+
+#### **Database Connection Errors**
+```python
+from sqlalchemy.exc import SQLAlchemyError
+
+@app.exception_handler(SQLAlchemyError)
+async def database_exception_handler(request: Request, exc: SQLAlchemyError):
+    """Handle database-related errors."""
+    logger.error(f"Database error: {exc}")
+    
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": "Database temporarily unavailable",
+            "message": "Please try again later",
+            "timestamp": datetime.now().isoformat()
+        }
+    )
+```
+
+#### **External API Errors**
+```python
+import httpx
+
+class ExternalAPIError(Exception):
+    def __init__(self, service: str, status_code: int, message: str):
+        self.service = service
+        self.status_code = status_code
+        self.message = message
+        super().__init__(f"{service} API error: {message}")
+
+@app.exception_handler(ExternalAPIError)
+async def external_api_error_handler(request: Request, exc: ExternalAPIError):
+    """Handle external API errors."""
+    return JSONResponse(
+        status_code=502,
+        content={
+            "error": f"{exc.service} service unavailable",
+            "message": "External service is temporarily down",
+            "timestamp": datetime.now().isoformat()
+        }
+    )
+
+@app.get("/external-data/{item_id}")
+async def get_external_data(item_id: str):
+    """Endpoint that calls external API with error handling."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"https://api.example.com/items/{item_id}")
+            
+            if response.status_code != 200:
+                raise ExternalAPIError(
+                    service="Example API",
+                    status_code=response.status_code,
+                    message=response.text
+                )
+            
+            return response.json()
+            
+    except httpx.RequestError as e:
+        raise ExternalAPIError(
+            service="Example API",
+            status_code=0,
+            message=f"Connection error: {str(e)}"
+        )
+```
+
+### Key Learning Points
+- **HTTPException is the standard way** to raise HTTP errors in FastAPI
+- **Custom headers in exceptions** provide additional context for debugging
+- **Custom exception classes** enable domain-specific error handling
+- **Exception handlers** provide consistent error response formatting
+- **Proper HTTP status codes** improve API usability and client integration
+- **Error logging is crucial** for debugging and monitoring
+- **Security considerations** require careful handling of error details
+- **Rate limiting and monitoring** help prevent abuse and track performance
+- **Validation error customization** improves user experience
+- **Global exception handlers** catch unexpected errors gracefully
+
+This lesson establishes robust error handling patterns that improve API reliability, user experience, and maintainability while providing proper debugging support for developers!
