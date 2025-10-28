@@ -45,6 +45,7 @@ FastAPI_handson/
 ├── 10extradatatypes.py
 ├── 11responsemodelreturntype.py
 ├── 12extramodels.py
+├── 13responseandstatuscode.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -1745,3 +1746,293 @@ async def create_user(user_in: UserIn) -> UserOut:
 - **Security is built into the architecture** rather than being an afterthought
 
 This lesson establishes the foundation for building secure, maintainable APIs with proper data separation and protection patterns that are essential for production applications!
+
+## Lesson 13: Response Status Code - HTTP Status Code Management
+
+### Overview
+- Understanding and controlling HTTP status codes in FastAPI responses
+- Using FastAPI's status module for semantic status codes
+- RESTful API conventions for proper status code usage
+- Client communication through meaningful status codes
+- Best practices for status code selection and consistency
+
+### File: `13responseandstatuscode.py`
+
+This lesson demonstrates how to specify and control HTTP status codes in FastAPI responses, which is crucial for building RESTful APIs that communicate effectively with clients about the result of their requests.
+
+### Key Concepts Covered
+1. **Custom Status Codes**: Setting specific status codes using the status_code parameter
+2. **FastAPI Status Module**: Using semantic constants instead of magic numbers
+3. **HTTP Status Categories**: Understanding 1xx through 5xx status code ranges
+4. **RESTful Conventions**: Proper status codes for different HTTP methods
+5. **Client Communication**: How status codes inform API consumers
+6. **Best Practices**: Consistency and semantic meaning in status code usage
+
+### Running the Application
+```bash
+fastapi dev 13responseandstatuscode.py
+```
+
+### HTTP Status Code Categories
+
+#### **1xx - Informational Responses**
+- **100 Continue**: Request received, client should continue
+- **101 Switching Protocols**: Server switching protocols
+
+#### **2xx - Success Responses**
+- **200 OK**: Standard successful response
+- **201 Created**: Resource successfully created (POST operations)
+- **202 Accepted**: Request accepted for processing (async operations)
+- **204 No Content**: Successful request with no content to return (DELETE)
+
+#### **3xx - Redirection Responses**
+- **301 Moved Permanently**: Resource permanently moved
+- **302 Found**: Resource temporarily moved
+- **304 Not Modified**: Cached version is still valid
+
+#### **4xx - Client Error Responses**
+- **400 Bad Request**: Invalid request format or parameters
+- **401 Unauthorized**: Authentication required
+- **403 Forbidden**: Access denied
+- **404 Not Found**: Resource not found
+- **422 Unprocessable Entity**: Validation error (FastAPI default)
+
+#### **5xx - Server Error Responses**
+- **500 Internal Server Error**: Server-side error
+- **502 Bad Gateway**: Invalid response from upstream server
+- **503 Service Unavailable**: Server temporarily unavailable
+
+### Endpoint Implementation
+
+#### **Item Creation Endpoint**
+```python
+@app.post("/items/", status_code=status.HTTP_201_CREATED)
+async def create_item(name: str):
+    return {"name": name}
+```
+
+**Key Features:**
+- **POST Method**: Appropriate for resource creation
+- **201 Created Status**: Semantic status code for successful creation
+- **Query Parameter**: Simple name parameter for item creation
+- **JSON Response**: Returns created item data
+
+### Example Usage
+
+#### **Create Item Request**
+```bash
+curl -X POST "http://localhost:8000/items/?name=laptop" \
+  -H "Content-Type: application/json"
+```
+
+#### **Successful Response**
+```http
+HTTP/1.1 201 Created
+Content-Type: application/json
+
+{
+  "name": "laptop"
+}
+```
+
+#### **Response Analysis**
+- **Status Code**: 201 Created (not default 200 OK)
+- **Semantic Meaning**: Indicates successful resource creation
+- **Client Benefit**: Clear indication of operation result
+- **REST Compliance**: Follows RESTful API conventions
+
+### Status Code Best Practices
+
+#### **RESTful API Status Code Conventions**
+| HTTP Method | Operation | Success Status | Purpose |
+|-------------|-----------|----------------|---------|
+| POST | Create | 201 Created | Resource successfully created |
+| GET | Read | 200 OK | Data retrieved successfully |
+| PUT | Update | 200 OK | Resource updated successfully |
+| PATCH | Partial Update | 200 OK | Resource partially updated |
+| DELETE | Delete | 204 No Content | Resource deleted successfully |
+
+#### **FastAPI Status Module Usage**
+```python
+from fastapi import status
+
+# Recommended: Use semantic constants
+@app.post("/items/", status_code=status.HTTP_201_CREATED)
+
+# Avoid: Magic numbers
+@app.post("/items/", status_code=201)
+```
+
+**Benefits of Status Constants:**
+- **Self-Documenting**: Code clearly shows intent
+- **IDE Support**: Autocompletion and type checking
+- **Consistency**: Prevents typos and inconsistencies
+- **Maintainability**: Easy to update across codebase
+
+### Advanced Status Code Patterns
+
+#### **Conditional Status Codes**
+```python
+from fastapi import HTTPException
+
+@app.post("/items/")
+async def create_item_advanced(name: str):
+    if item_exists(name):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Item already exists"
+        )
+    
+    create_item(name)
+    return {"name": name, "status": "created"}
+```
+
+#### **Multiple Success Scenarios**
+```python
+@app.put("/items/{item_id}")
+async def update_item(item_id: int, item: Item):
+    if not item_exists(item_id):
+        # Create new resource
+        create_item(item_id, item)
+        return JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content={"message": "Item created"}
+        )
+    else:
+        # Update existing resource
+        update_existing_item(item_id, item)
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"message": "Item updated"}
+        )
+```
+
+### Error Handling with Status Codes
+
+#### **Client Errors (4xx)**
+```python
+# Validation Error Example
+{
+  "detail": [
+    {
+      "loc": ["query", "name"],
+      "msg": "field required",
+      "type": "value_error.missing"
+    }
+  ]
+}
+# Status: 422 Unprocessable Entity
+```
+
+#### **Custom Error Responses**
+```python
+from fastapi import HTTPException
+
+@app.get("/items/{item_id}")
+async def get_item(item_id: int):
+    if item_id < 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Item ID must be positive"
+        )
+    
+    item = find_item(item_id)
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Item not found"
+        )
+    
+    return item
+```
+
+### Real-World Applications
+
+#### **E-commerce API**
+- **201 Created**: New product added to catalog
+- **200 OK**: Product details retrieved
+- **400 Bad Request**: Invalid product data
+- **404 Not Found**: Product doesn't exist
+- **409 Conflict**: Product SKU already exists
+
+#### **User Management API**
+- **201 Created**: User account created
+- **200 OK**: User profile retrieved
+- **401 Unauthorized**: Login required
+- **403 Forbidden**: Insufficient permissions
+- **422 Unprocessable Entity**: Invalid email format
+
+#### **File Upload API**
+- **201 Created**: File uploaded successfully
+- **202 Accepted**: File queued for processing
+- **413 Payload Too Large**: File size exceeds limit
+- **415 Unsupported Media Type**: Invalid file format
+
+### API Documentation Benefits
+
+#### **Automatic OpenAPI Documentation**
+```python
+@app.post(
+    "/items/", 
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new item",
+    description="Creates a new item with the specified name",
+    responses={
+        201: {"description": "Item created successfully"},
+        400: {"description": "Invalid item name"},
+        409: {"description": "Item already exists"}
+    }
+)
+```
+
+#### **Client Code Generation**
+Status codes enable:
+- **Type-safe client libraries**: Generated clients handle status codes correctly
+- **Error handling**: Clients can respond appropriately to different status codes
+- **API contracts**: Clear expectations between client and server
+
+### Testing with Status Codes
+
+#### **Test Examples**
+```python
+def test_create_item_success():
+    response = client.post("/items/?name=test")
+    assert response.status_code == 201
+    assert response.json() == {"name": "test"}
+
+def test_create_item_validation_error():
+    response = client.post("/items/")  # Missing name parameter
+    assert response.status_code == 422
+```
+
+### Performance and Monitoring
+
+#### **Status Code Metrics**
+- **Success Rate**: Percentage of 2xx responses
+- **Error Rate**: Percentage of 4xx/5xx responses
+- **API Health**: Monitor status code distributions
+- **Client Debugging**: Status codes help identify issues
+
+#### **Logging and Observability**
+```python
+import logging
+
+@app.post("/items/", status_code=status.HTTP_201_CREATED)
+async def create_item(name: str):
+    logging.info(f"Creating item: {name}")
+    result = {"name": name}
+    logging.info(f"Item created successfully: {result}")
+    return result
+```
+
+### Key Learning Points
+- **Proper status codes improve API usability** and client integration
+- **FastAPI's status module provides semantic constants** for better code quality
+- **RESTful conventions guide status code selection** for different operations
+- **201 Created is the correct status for resource creation** instead of default 200 OK
+- **Status codes communicate operation results** without clients parsing response bodies
+- **Consistent status code usage** improves API predictability and developer experience
+- **Error status codes enable proper client error handling** and user feedback
+- **Status codes are part of the API contract** and should be documented and tested
+
+This lesson establishes the foundation for building well-designed APIs that communicate effectively with clients through proper HTTP status code usage, improving both developer experience and application reliability!
