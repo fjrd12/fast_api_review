@@ -48,6 +48,7 @@ FastAPI_handson/
 ├── 13responseandstatuscode.py
 ├── 14requestforms.py
 ├── 15requestfiles.py
+├── 16RequestFormFiles.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -2894,3 +2895,571 @@ async def upload_image(file: UploadFile):
 - **File storage patterns** should include unique naming and organized directory structures
 
 This lesson establishes the foundation for building robust file upload systems that can handle various file types securely and efficiently, from simple document uploads to complex image processing pipelines!
+
+---
+
+## Lesson 16: Request Form and Files
+
+### Overview
+- **Purpose**: Learn how to handle both form data and file uploads simultaneously in a single endpoint
+- **Key Concepts**: Combining `Form()` and `File()` parameters with `Annotated` type hints
+- **Use Cases**: Document upload with metadata, user registration with profile pictures, multi-part data submission
+
+### File: `16RequestFormFiles.py`
+
+This lesson demonstrates how to create endpoints that accept both form fields and file uploads in the same request, using modern Python type annotations with `Annotated` for clear parameter definitions.
+
+### Core Concepts
+
+#### **Mixed Form and File Data**
+```python
+# Single endpoint accepting both files and form data
+@app.post("/files/")
+async def create_file(
+    file: Annotated[bytes, File()],          # File as bytes
+    fileb: Annotated[UploadFile, File()],    # File as UploadFile
+    token: Annotated[str, Form()]            # Form field
+):
+    return {
+        "file_size": len(file),
+        "token": token,
+        "fileb_content_type": fileb.content_type
+    }
+```
+
+#### **Required Imports**
+```python
+from typing import Annotated
+from fastapi import FastAPI, File, Form, UploadFile
+
+app = FastAPI()
+```
+
+### Implementation Analysis
+
+#### **The Complete Endpoint**
+```python
+@app.post("/files/")
+async def create_file(
+    file: Annotated[bytes, File()],
+    fileb: Annotated[UploadFile, File()],
+    token: Annotated[str, Form()]
+):
+    """
+    Upload files with form data in a single request.
+    
+    This endpoint demonstrates how to handle multiple types of data in one request:
+    - A file uploaded as bytes (for small files)
+    - A file uploaded as UploadFile (for larger files with metadata)
+    - A form field containing a token string
+    
+    Args:
+        file (bytes): Small file uploaded as bytes
+        fileb (UploadFile): File with metadata access
+        token (str): Authentication token or form data
+        
+    Returns:
+        dict: Information about uploaded files and form data
+        
+    Example Request:
+        POST /files/
+        Content-Type: multipart/form-data
+        file: <small_file.txt>
+        fileb: <large_document.pdf>
+        token: "auth_token_12345"
+        
+    Example Response:
+        {
+            "file_size": 1024,
+            "token": "auth_token_12345",
+            "fileb_content_type": "application/pdf"
+        }
+    """
+    return {
+        "file_size": len(file),
+        "token": token,
+        "fileb_content_type": fileb.content_type
+    }
+```
+
+### Annotated Type Hints
+
+#### **Why Use Annotated?**
+```python
+# Old style (still works)
+async def old_style(file: bytes = File(), token: str = Form()):
+    pass
+
+# New style with Annotated (recommended)
+async def new_style(
+    file: Annotated[bytes, File()],
+    token: Annotated[str, Form()]
+):
+    pass
+```
+
+#### **Benefits of Annotated**
+- **Clearer separation** between type and FastAPI metadata
+- **Better IDE support** for type checking and autocompletion
+- **More explicit** about parameter requirements
+- **Future-proof** with Python's type system evolution
+
+### Advanced Mixed Data Patterns
+
+#### **Document Upload with Metadata**
+```python
+from typing import Optional
+from datetime import datetime
+
+@app.post("/documents/")
+async def upload_document(
+    document: Annotated[UploadFile, File(description="Document file to upload")],
+    title: Annotated[str, Form(description="Document title")],
+    description: Annotated[Optional[str], Form()] = None,
+    category: Annotated[str, Form(description="Document category")],
+    tags: Annotated[Optional[str], Form(description="Comma-separated tags")] = None,
+    is_public: Annotated[bool, Form()] = False
+):
+    """Upload document with comprehensive metadata."""
+    
+    # Process tags
+    tag_list = tags.split(",") if tags else []
+    
+    # Validate file type
+    allowed_types = ["application/pdf", "text/plain", "application/msword"]
+    if document.content_type not in allowed_types:
+        raise HTTPException(400, f"File type {document.content_type} not allowed")
+    
+    # Read file content
+    content = await document.read()
+    
+    return {
+        "document_info": {
+            "filename": document.filename,
+            "content_type": document.content_type,
+            "size": len(content)
+        },
+        "metadata": {
+            "title": title,
+            "description": description,
+            "category": category,
+            "tags": tag_list,
+            "is_public": is_public,
+            "upload_timestamp": datetime.now().isoformat()
+        }
+    }
+```
+
+#### **User Profile with Avatar**
+```python
+from pydantic import EmailStr
+
+@app.post("/profile/")
+async def create_profile(
+    avatar: Annotated[UploadFile, File(description="Profile picture")],
+    username: Annotated[str, Form(min_length=3, max_length=20)],
+    email: Annotated[EmailStr, Form()],
+    bio: Annotated[Optional[str], Form(max_length=500)] = None,
+    age: Annotated[Optional[int], Form(ge=13, le=120)] = None,
+    newsletter: Annotated[bool, Form()] = False
+):
+    """Create user profile with avatar upload."""
+    
+    # Validate avatar is an image
+    if not avatar.content_type.startswith('image/'):
+        raise HTTPException(400, "Avatar must be an image file")
+    
+    # Process avatar
+    avatar_content = await avatar.read()
+    if len(avatar_content) > 5 * 1024 * 1024:  # 5MB limit
+        raise HTTPException(413, "Avatar file too large (max 5MB)")
+    
+    return {
+        "profile": {
+            "username": username,
+            "email": email,
+            "bio": bio,
+            "age": age,
+            "newsletter_subscribed": newsletter
+        },
+        "avatar": {
+            "filename": avatar.filename,
+            "content_type": avatar.content_type,
+            "size": len(avatar_content)
+        }
+    }
+```
+
+#### **Multiple Files with Form Data**
+```python
+@app.post("/batch-upload/")
+async def batch_upload(
+    files: Annotated[List[UploadFile], File(description="Multiple files to upload")],
+    project_name: Annotated[str, Form(description="Project name")],
+    description: Annotated[str, Form(description="Project description")],
+    category: Annotated[str, Form(description="Project category")],
+    notify_users: Annotated[bool, Form()] = True
+):
+    """Upload multiple files with project metadata."""
+    
+    uploaded_files = []
+    total_size = 0
+    
+    for file in files:
+        content = await file.read()
+        file_size = len(content)
+        total_size += file_size
+        
+        uploaded_files.append({
+            "filename": file.filename,
+            "content_type": file.content_type,
+            "size": file_size
+        })
+        
+        # Reset file pointer if needed for further processing
+        await file.seek(0)
+    
+    return {
+        "project": {
+            "name": project_name,
+            "description": description,
+            "category": category,
+            "notify_users": notify_users
+        },
+        "upload_summary": {
+            "files_count": len(files),
+            "total_size": total_size,
+            "files": uploaded_files
+        }
+    }
+```
+
+### Form Validation with Files
+
+#### **Complex Validation Example**
+```python
+from fastapi import HTTPException, status
+
+@app.post("/submit-application/")
+async def submit_application(
+    resume: Annotated[UploadFile, File(description="Resume/CV file")],
+    cover_letter: Annotated[Optional[UploadFile], File(description="Cover letter")] = None,
+    full_name: Annotated[str, Form(min_length=2, max_length=100)],
+    email: Annotated[EmailStr, Form()],
+    phone: Annotated[str, Form(regex=r'^\+?[\d\s\-\(\)]+$')],
+    position: Annotated[str, Form(description="Position applied for")],
+    experience_years: Annotated[int, Form(ge=0, le=50)],
+    salary_expectation: Annotated[Optional[int], Form(ge=0)] = None,
+    available_start: Annotated[str, Form(description="Available start date (YYYY-MM-DD)")],
+    relocate_willing: Annotated[bool, Form()] = False
+):
+    """Submit job application with resume and form data."""
+    
+    # Validate resume file
+    if resume.content_type not in ["application/pdf", "application/msword", 
+                                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Resume must be PDF or Word document"
+        )
+    
+    resume_content = await resume.read()
+    if len(resume_content) > 10 * 1024 * 1024:  # 10MB limit
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Resume file too large (max 10MB)"
+        )
+    
+    # Validate cover letter if provided
+    cover_letter_info = None
+    if cover_letter:
+        if cover_letter.content_type not in ["application/pdf", "text/plain"]:
+            raise HTTPException(400, "Cover letter must be PDF or text file")
+        
+        cover_letter_content = await cover_letter.read()
+        cover_letter_info = {
+            "filename": cover_letter.filename,
+            "size": len(cover_letter_content)
+        }
+    
+    # Validate start date format
+    try:
+        datetime.strptime(available_start, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+    
+    return {
+        "application": {
+            "full_name": full_name,
+            "email": email,
+            "phone": phone,
+            "position": position,
+            "experience_years": experience_years,
+            "salary_expectation": salary_expectation,
+            "available_start": available_start,
+            "relocate_willing": relocate_willing
+        },
+        "documents": {
+            "resume": {
+                "filename": resume.filename,
+                "size": len(resume_content)
+            },
+            "cover_letter": cover_letter_info
+        },
+        "status": "Application submitted successfully"
+    }
+```
+
+### Testing Mixed Form and File Data
+
+#### **Using curl**
+```bash
+# Test the basic endpoint
+curl -X POST "http://localhost:8000/files/" \
+     -F "file=@small_file.txt" \
+     -F "fileb=@large_document.pdf" \
+     -F "token=auth_token_12345"
+
+# Test document upload with metadata
+curl -X POST "http://localhost:8000/documents/" \
+     -F "document=@report.pdf" \
+     -F "title=Monthly Report" \
+     -F "description=Sales analysis for March" \
+     -F "category=business" \
+     -F "tags=sales,analysis,monthly" \
+     -F "is_public=false"
+```
+
+#### **Using Python requests**
+```python
+import requests
+
+# Test multiple data types
+files = {
+    'file': ('test.txt', open('test.txt', 'rb'), 'text/plain'),
+    'fileb': ('document.pdf', open('document.pdf', 'rb'), 'application/pdf')
+}
+
+data = {
+    'token': 'auth_token_12345'
+}
+
+response = requests.post(
+    'http://localhost:8000/files/',
+    files=files,
+    data=data
+)
+
+print(response.json())
+```
+
+#### **Using FastAPI TestClient**
+```python
+from fastapi.testclient import TestClient
+import io
+
+def test_mixed_form_file_upload():
+    client = TestClient(app)
+    
+    # Create test files
+    small_file = io.BytesIO(b"small file content")
+    large_file = io.BytesIO(b"large file content for upload")
+    
+    response = client.post(
+        "/files/",
+        files={
+            "file": ("small.txt", small_file, "text/plain"),
+            "fileb": ("large.pdf", large_file, "application/pdf")
+        },
+        data={"token": "test_token"}
+    )
+    
+    assert response.status_code == 200
+    result = response.json()
+    assert result["token"] == "test_token"
+    assert result["file_size"] == 18
+    assert result["fileb_content_type"] == "application/pdf"
+```
+
+### HTML Form Example
+
+#### **Frontend Form with Files and Data**
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upload Files with Data</title>
+</head>
+<body>
+    <h2>Upload Files with Metadata</h2>
+    <form action="/documents/" method="post" enctype="multipart/form-data">
+        <!-- File uploads -->
+        <label for="document">Document:</label>
+        <input type="file" id="document" name="document" accept=".pdf,.doc,.docx" required>
+        
+        <!-- Form fields -->
+        <label for="title">Title:</label>
+        <input type="text" id="title" name="title" required>
+        
+        <label for="description">Description:</label>
+        <textarea id="description" name="description" rows="3"></textarea>
+        
+        <label for="category">Category:</label>
+        <select id="category" name="category" required>
+            <option value="business">Business</option>
+            <option value="technical">Technical</option>
+            <option value="legal">Legal</option>
+        </select>
+        
+        <label for="tags">Tags (comma-separated):</label>
+        <input type="text" id="tags" name="tags" placeholder="tag1, tag2, tag3">
+        
+        <label>
+            <input type="checkbox" name="is_public" value="true">
+            Make document public
+        </label>
+        
+        <button type="submit">Upload Document</button>
+    </form>
+</body>
+</html>
+```
+
+### Security and Validation Best Practices
+
+#### **Comprehensive Security Example**
+```python
+import hashlib
+import secrets
+from pathlib import Path
+
+UPLOAD_DIR = Path("secure_uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+@app.post("/secure-upload/")
+async def secure_mixed_upload(
+    file: Annotated[UploadFile, File()],
+    user_id: Annotated[int, Form(gt=0)],
+    api_key: Annotated[str, Form(min_length=32)],
+    checksum: Annotated[str, Form(description="SHA256 checksum of file")]
+):
+    """Secure file upload with integrity verification."""
+    
+    # Validate API key (simplified example)
+    if not validate_api_key(api_key, user_id):
+        raise HTTPException(401, "Invalid API key")
+    
+    # Read file content
+    content = await file.read()
+    
+    # Verify file integrity
+    calculated_checksum = hashlib.sha256(content).hexdigest()
+    if calculated_checksum != checksum:
+        raise HTTPException(400, "File checksum mismatch")
+    
+    # Generate secure filename
+    secure_name = f"{secrets.token_hex(16)}_{file.filename}"
+    file_path = UPLOAD_DIR / secure_name
+    
+    # Save file securely
+    async with aiofiles.open(file_path, 'wb') as f:
+        await f.write(content)
+    
+    return {
+        "file_id": secrets.token_hex(16),
+        "original_filename": file.filename,
+        "secure_filename": secure_name,
+        "checksum_verified": True,
+        "user_id": user_id
+    }
+
+def validate_api_key(api_key: str, user_id: int) -> bool:
+    """Validate API key for user (simplified)."""
+    # In real implementation, check against database
+    return len(api_key) >= 32
+```
+
+### Performance Optimization
+
+#### **Streaming and Async Processing**
+```python
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+@app.post("/process-large-files/")
+async def process_large_files(
+    background_tasks: BackgroundTasks,
+    data_file: Annotated[UploadFile, File()],
+    config_file: Annotated[UploadFile, File()],
+    processing_mode: Annotated[str, Form()],
+    notification_email: Annotated[EmailStr, Form()],
+    priority: Annotated[int, Form(ge=1, le=10)] = 5
+):
+    """Process large files asynchronously with configuration."""
+    
+    # Save files for processing
+    data_path = UPLOAD_DIR / f"data_{secrets.token_hex(8)}.dat"
+    config_path = UPLOAD_DIR / f"config_{secrets.token_hex(8)}.json"
+    
+    # Stream large file to disk
+    async with aiofiles.open(data_path, 'wb') as f:
+        while chunk := await data_file.read(8192):  # 8KB chunks
+            await f.write(chunk)
+    
+    # Save config file
+    config_content = await config_file.read()
+    async with aiofiles.open(config_path, 'wb') as f:
+        await f.write(config_content)
+    
+    # Schedule background processing
+    job_id = secrets.token_hex(16)
+    background_tasks.add_task(
+        process_files_background,
+        job_id, data_path, config_path, processing_mode, notification_email
+    )
+    
+    return {
+        "job_id": job_id,
+        "status": "Processing started",
+        "data_file": data_file.filename,
+        "config_file": config_file.filename,
+        "priority": priority,
+        "notification_email": notification_email
+    }
+
+async def process_files_background(
+    job_id: str, 
+    data_path: Path, 
+    config_path: Path, 
+    mode: str, 
+    email: str
+):
+    """Background file processing task."""
+    try:
+        # Simulate complex processing
+        await asyncio.sleep(30)  # Replace with actual processing
+        
+        # Send completion notification
+        send_notification(email, f"Job {job_id} completed successfully")
+        
+        # Cleanup temporary files
+        data_path.unlink()
+        config_path.unlink()
+        
+    except Exception as e:
+        send_notification(email, f"Job {job_id} failed: {str(e)}")
+```
+
+### Key Learning Points
+- **`Annotated` type hints improve code clarity** and separate type information from FastAPI metadata
+- **Mixed form and file endpoints** enable rich data submission in single requests
+- **Content-Type must be `multipart/form-data`** when combining files and form fields
+- **File validation is essential** for security and data integrity
+- **Form validation works with file uploads** using Pydantic validation patterns
+- **Multiple files can be combined** with form data in sophisticated upload systems
+- **Background processing** is recommended for large file operations
+- **Security considerations** include API key validation, file integrity checks, and secure storage
+- **Testing requires proper multipart** form data simulation with both files and form fields
+- **Performance optimization** involves streaming large files and async processing
+
+This lesson demonstrates how to build sophisticated upload systems that combine the flexibility of form data with the power of file uploads, enabling rich, interactive applications with comprehensive data submission capabilities!
