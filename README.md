@@ -47,6 +47,7 @@ FastAPI_handson/
 ├── 12extramodels.py
 ├── 13responseandstatuscode.py
 ├── 14requestforms.py
+├── 15requestfiles.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -2365,3 +2366,531 @@ async def login(
 - **Form data is ideal** for authentication, file uploads, and traditional web interfaces
 
 This lesson provides the foundation for building web applications that can handle both modern JSON APIs and traditional HTML form submissions, ensuring broad compatibility and accessibility!
+
+---
+
+## Lesson 15: Request Files
+
+### Overview
+- **Purpose**: Learn how to handle file uploads in FastAPI applications
+- **Key Concepts**: Using `File()` and `UploadFile` for different file handling scenarios
+- **Use Cases**: Document uploads, image processing, data import systems, and file storage services
+
+### File: `15requestfiles.py`
+
+This lesson demonstrates two different approaches to handling file uploads in FastAPI: using `File()` for reading files as bytes and `UploadFile` for more efficient file handling with metadata access.
+
+### Core Concepts
+
+#### **File Upload Methods**
+```python
+# Method 1: File as bytes (small files)
+file: bytes = File()
+
+# Method 2: UploadFile object (recommended for larger files)
+file: UploadFile
+```
+
+#### **Required Imports**
+```python
+from fastapi import FastAPI, File, UploadFile
+
+app = FastAPI()
+```
+
+### Implementation Details
+
+#### **File Upload as Bytes**
+```python
+@app.post("/files/")
+async def create_file(file: bytes = File()):
+    """
+    Upload a file and return its size.
+    
+    This endpoint demonstrates how to handle file uploads in FastAPI using
+    the File class. The uploaded file is read as bytes, and the size of
+    the file is returned in the response.
+    
+    Args:
+        file (bytes): The uploaded file content as bytes
+        
+    Returns:
+        dict: A dictionary containing the size of the uploaded file in bytes
+    """
+    return {"file_size": len(file)}
+```
+
+#### **File Upload as UploadFile Object**
+```python
+@app.post("/uploadfile/")
+async def create_upload_file(file: UploadFile):
+    """
+    Upload a file and return its filename.
+    
+    This endpoint demonstrates how to handle file uploads in FastAPI using
+    the UploadFile class. The uploaded file is represented as an UploadFile
+    object, which provides access to metadata such as the filename.
+    
+    Args:
+        file (UploadFile): The uploaded file as an UploadFile object
+        
+    Returns:
+        dict: A dictionary containing the filename of the uploaded file
+    """
+    return {"filename": file.filename}
+```
+
+### File Upload Comparison
+
+| Feature | `File()` (bytes) | `UploadFile` |
+|---------|------------------|--------------|
+| **Memory Usage** | Loads entire file into memory | Streams file content |
+| **Performance** | Good for small files | Better for large files |
+| **Metadata Access** | Limited | Full metadata available |
+| **File Operations** | Basic byte operations | Rich file-like interface |
+| **Best For** | Small files, simple processing | Large files, complex operations |
+
+### UploadFile Properties and Methods
+
+#### **Available Properties**
+```python
+@app.post("/file-info/")
+async def get_file_info(file: UploadFile):
+    return {
+        "filename": file.filename,           # Original filename
+        "content_type": file.content_type,   # MIME type
+        "size": file.size,                   # File size (if available)
+        "headers": dict(file.headers)        # All headers
+    }
+```
+
+#### **Reading File Content**
+```python
+@app.post("/process-file/")
+async def process_file(file: UploadFile):
+    # Read entire file content
+    content = await file.read()
+    
+    # Reset file pointer to beginning
+    await file.seek(0)
+    
+    # Read line by line (for text files)
+    lines = []
+    async for line in file:
+        lines.append(line.decode())
+    
+    return {
+        "filename": file.filename,
+        "size": len(content),
+        "lines_count": len(lines)
+    }
+```
+
+### Advanced File Handling Patterns
+
+#### **Multiple File Uploads**
+```python
+from typing import List
+
+@app.post("/multiple-files/")
+async def upload_multiple_files(files: List[UploadFile]):
+    """Handle multiple file uploads simultaneously."""
+    file_info = []
+    
+    for file in files:
+        content = await file.read()
+        file_info.append({
+            "filename": file.filename,
+            "content_type": file.content_type,
+            "size": len(content)
+        })
+    
+    return {"uploaded_files": file_info}
+```
+
+#### **File Validation**
+```python
+from fastapi import HTTPException
+
+ALLOWED_EXTENSIONS = {".txt", ".pdf", ".doc", ".docx", ".jpg", ".png"}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+@app.post("/validated-upload/")
+async def upload_with_validation(file: UploadFile):
+    """Upload file with validation for type and size."""
+    
+    # Check file extension
+    if not any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type not allowed. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}"
+        )
+    
+    # Read and check file size
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)}MB"
+        )
+    
+    # Reset file pointer for further processing
+    await file.seek(0)
+    
+    return {
+        "filename": file.filename,
+        "size": len(content),
+        "message": "File uploaded successfully"
+    }
+```
+
+#### **File Storage**
+```python
+import aiofiles
+import os
+from pathlib import Path
+
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+@app.post("/save-file/")
+async def save_uploaded_file(file: UploadFile):
+    """Save uploaded file to disk."""
+    
+    file_path = UPLOAD_DIR / file.filename
+    
+    async with aiofiles.open(file_path, 'wb') as f:
+        content = await file.read()
+        await f.write(content)
+    
+    return {
+        "filename": file.filename,
+        "saved_path": str(file_path),
+        "message": "File saved successfully"
+    }
+```
+
+### Content Type Handling
+
+#### **Image Processing Example**
+```python
+from PIL import Image
+import io
+
+@app.post("/process-image/")
+async def process_image(file: UploadFile):
+    """Process uploaded image file."""
+    
+    # Verify it's an image
+    if not file.content_type.startswith('image/'):
+        raise HTTPException(
+            status_code=400,
+            detail="File must be an image"
+        )
+    
+    # Read image content
+    content = await file.read()
+    
+    # Process with PIL
+    image = Image.open(io.BytesIO(content))
+    
+    return {
+        "filename": file.filename,
+        "format": image.format,
+        "mode": image.mode,
+        "size": image.size,
+        "content_type": file.content_type
+    }
+```
+
+#### **CSV Processing Example**
+```python
+import csv
+import io
+
+@app.post("/process-csv/")
+async def process_csv(file: UploadFile):
+    """Process uploaded CSV file."""
+    
+    if not file.filename.lower().endswith('.csv'):
+        raise HTTPException(
+            status_code=400,
+            detail="File must be a CSV file"
+        )
+    
+    content = await file.read()
+    csv_data = content.decode('utf-8')
+    
+    # Parse CSV
+    csv_reader = csv.DictReader(io.StringIO(csv_data))
+    rows = list(csv_reader)
+    
+    return {
+        "filename": file.filename,
+        "rows_count": len(rows),
+        "columns": list(rows[0].keys()) if rows else [],
+        "sample_data": rows[:3]  # First 3 rows as sample
+    }
+```
+
+### Testing File Uploads
+
+#### **Using curl**
+```bash
+# Upload a single file
+curl -X POST "http://localhost:8000/files/" \
+     -H "Content-Type: multipart/form-data" \
+     -F "file=@example.txt"
+
+# Upload with UploadFile endpoint
+curl -X POST "http://localhost:8000/uploadfile/" \
+     -F "file=@document.pdf"
+```
+
+#### **Using Python requests**
+```python
+import requests
+
+# Upload file with requests
+with open('test_file.txt', 'rb') as f:
+    files = {'file': f}
+    response = requests.post(
+        'http://localhost:8000/uploadfile/',
+        files=files
+    )
+    
+print(response.json())
+```
+
+#### **Using FastAPI TestClient**
+```python
+from fastapi.testclient import TestClient
+import io
+
+def test_file_upload():
+    client = TestClient(app)
+    
+    # Create test file
+    test_file = io.BytesIO(b"test file content")
+    test_file.name = "test.txt"
+    
+    response = client.post(
+        "/uploadfile/",
+        files={"file": ("test.txt", test_file, "text/plain")}
+    )
+    
+    assert response.status_code == 200
+    assert response.json() == {"filename": "test.txt"}
+```
+
+### HTML Form for File Upload
+
+#### **Frontend Form Example**
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>File Upload</title>
+</head>
+<body>
+    <h2>Upload File</h2>
+    <form action="/uploadfile/" method="post" enctype="multipart/form-data">
+        <label for="file">Choose file:</label>
+        <input type="file" id="file" name="file" required>
+        <button type="submit">Upload</button>
+    </form>
+    
+    <h2>Upload Multiple Files</h2>
+    <form action="/multiple-files/" method="post" enctype="multipart/form-data">
+        <label for="files">Choose files:</label>
+        <input type="file" id="files" name="files" multiple required>
+        <button type="submit">Upload All</button>
+    </form>
+</body>
+</html>
+```
+
+### Security Considerations
+
+#### **File Validation Best Practices**
+```python
+import magic
+from pathlib import Path
+
+async def validate_file_security(file: UploadFile):
+    """Comprehensive file validation for security."""
+    
+    # Check filename for path traversal attacks
+    if ".." in file.filename or "/" in file.filename:
+        raise HTTPException(400, "Invalid filename")
+    
+    # Read file content
+    content = await file.read()
+    await file.seek(0)
+    
+    # Validate file signature (magic numbers)
+    file_type = magic.from_buffer(content, mime=True)
+    allowed_types = ["image/jpeg", "image/png", "text/plain", "application/pdf"]
+    
+    if file_type not in allowed_types:
+        raise HTTPException(400, f"File type {file_type} not allowed")
+    
+    # Check for malicious content (basic example)
+    if b"<script>" in content.lower():
+        raise HTTPException(400, "Potentially malicious content detected")
+    
+    return True
+
+@app.post("/secure-upload/")
+async def secure_file_upload(file: UploadFile):
+    """Secure file upload with comprehensive validation."""
+    
+    await validate_file_security(file)
+    
+    # Generate secure filename
+    secure_filename = f"{uuid4()}_{file.filename}"
+    
+    return {
+        "original_filename": file.filename,
+        "secure_filename": secure_filename,
+        "message": "File uploaded securely"
+    }
+```
+
+### Performance Considerations
+
+#### **Streaming Large Files**
+```python
+@app.post("/stream-upload/")
+async def stream_large_file(file: UploadFile):
+    """Handle large file uploads with streaming."""
+    
+    file_path = UPLOAD_DIR / file.filename
+    
+    async with aiofiles.open(file_path, 'wb') as f:
+        while chunk := await file.read(1024):  # Read in 1KB chunks
+            await f.write(chunk)
+    
+    return {
+        "filename": file.filename,
+        "message": "Large file uploaded successfully"
+    }
+```
+
+#### **Background Processing**
+```python
+from fastapi import BackgroundTasks
+
+def process_file_background(filename: str):
+    """Background task for file processing."""
+    # Simulate file processing
+    time.sleep(10)
+    print(f"Finished processing {filename}")
+
+@app.post("/upload-and-process/")
+async def upload_with_background_processing(
+    file: UploadFile, 
+    background_tasks: BackgroundTasks
+):
+    """Upload file and process it in the background."""
+    
+    # Save file
+    file_path = UPLOAD_DIR / file.filename
+    async with aiofiles.open(file_path, 'wb') as f:
+        content = await file.read()
+        await f.write(content)
+    
+    # Add background processing task
+    background_tasks.add_task(process_file_background, file.filename)
+    
+    return {
+        "filename": file.filename,
+        "message": "File uploaded, processing started in background"
+    }
+```
+
+### Real-World Applications
+
+#### **Document Management System**
+```python
+@app.post("/documents/")
+async def upload_document(
+    file: UploadFile,
+    category: str = Form(),
+    description: str = Form(None)
+):
+    """Upload document with metadata."""
+    
+    # Validate document type
+    allowed_types = [".pdf", ".doc", ".docx", ".txt"]
+    if not any(file.filename.lower().endswith(ext) for ext in allowed_types):
+        raise HTTPException(400, "Invalid document type")
+    
+    # Save file and metadata
+    document_id = str(uuid4())
+    file_path = UPLOAD_DIR / f"{document_id}_{file.filename}"
+    
+    async with aiofiles.open(file_path, 'wb') as f:
+        content = await file.read()
+        await f.write(content)
+    
+    # Store metadata in database (simulated)
+    document_metadata = {
+        "id": document_id,
+        "filename": file.filename,
+        "category": category,
+        "description": description,
+        "upload_date": datetime.now().isoformat(),
+        "file_path": str(file_path)
+    }
+    
+    return document_metadata
+```
+
+#### **Image Upload Service**
+```python
+@app.post("/images/")
+async def upload_image(file: UploadFile):
+    """Upload and process image with thumbnail generation."""
+    
+    if not file.content_type.startswith('image/'):
+        raise HTTPException(400, "File must be an image")
+    
+    content = await file.read()
+    image = Image.open(io.BytesIO(content))
+    
+    # Generate thumbnail
+    thumbnail = image.copy()
+    thumbnail.thumbnail((200, 200))
+    
+    # Save original and thumbnail
+    image_id = str(uuid4())
+    original_path = UPLOAD_DIR / f"{image_id}_original.jpg"
+    thumbnail_path = UPLOAD_DIR / f"{image_id}_thumbnail.jpg"
+    
+    image.save(original_path, "JPEG")
+    thumbnail.save(thumbnail_path, "JPEG")
+    
+    return {
+        "image_id": image_id,
+        "original_filename": file.filename,
+        "size": image.size,
+        "format": image.format,
+        "original_url": f"/images/{image_id}/original",
+        "thumbnail_url": f"/images/{image_id}/thumbnail"
+    }
+```
+
+### Key Learning Points
+- **`File()` is suitable for small files** that can be loaded entirely into memory as bytes
+- **`UploadFile` is preferred for larger files** and provides rich metadata and streaming capabilities
+- **File validation is crucial** for security - check extensions, content types, and file signatures
+- **Content-Type must be `multipart/form-data`** for file uploads, not JSON
+- **Streaming large files** prevents memory issues and improves performance
+- **Background processing** can handle time-consuming file operations without blocking responses
+- **Security considerations** include path traversal prevention and malicious content detection
+- **Testing file uploads** requires proper multipart form data simulation
+- **UploadFile provides metadata access** including filename, content type, and headers
+- **File storage patterns** should include unique naming and organized directory structures
+
+This lesson establishes the foundation for building robust file upload systems that can handle various file types securely and efficiently, from simple document uploads to complex image processing pipelines!
