@@ -58,6 +58,7 @@ FastAPI_handson/
 ├── 23dependency-subdependencies.py
 ├── 24decorator dependencies.py
 ├── 25globaldependences.py
+├── 26dependencieswithyield.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -8690,3 +8691,416 @@ app = create_app_with_selective_globals()
 - **Real-world patterns** include enterprise security stacks and multi-tenant applications
 
 This lesson establishes the foundation for building secure, maintainable applications where comprehensive security and cross-cutting concerns are automatically enforced across all endpoints without compromising code clarity or business logic focus!
+
+---
+
+## Lesson 26: Dependencies with Yield Pattern
+
+### Overview
+- **Purpose**: Master the advanced yield pattern in FastAPI dependencies for proper resource lifecycle management and automatic cleanup
+- **Key Concepts**: Resource management with yield, context managers, setup/teardown patterns, exception-safe resource handling
+- **Use Cases**: Database connection management, file handle management, cache connections, external API clients, logging contexts
+
+### File: `26dependencieswithyield.py`
+
+This lesson introduces the sophisticated yield pattern in FastAPI dependencies, demonstrating how to implement proper resource management with guaranteed cleanup, essential for production applications handling databases, file systems, and external services.
+
+### Core Concepts
+
+#### **Yield Pattern vs Regular Dependencies**
+```python
+# Regular Dependency (no cleanup guarantee)
+def get_regular_db():
+    db = DBSession()
+    return db  # No automatic cleanup
+
+# Yield Dependency (guaranteed cleanup)
+async def get_db():
+    db = DBSession()  # Setup phase
+    try:
+        yield db      # Provide resource to endpoint
+    finally:
+        db.close()    # Cleanup phase (always executes)
+```
+
+#### **Resource Lifecycle Management**
+```
+HTTP Request Starts
+    │
+    ├─ Setup Phase: Create DBSession
+    │   └─ Connection established
+    │
+    ├─ Yield Phase: Provide session to endpoint
+    │   └─ Endpoint executes with active session
+    │
+    ├─ Cleanup Phase: Close session (ALWAYS)
+    │   └─ Resources released, connections returned to pool
+    │
+HTTP Request Ends
+```
+
+### Advanced Implementation Patterns
+
+#### **Database Session Management with Yield**
+```python
+# Production-ready database dependency
+async def get_db():
+    """
+    Database session with guaranteed cleanup and transaction handling.
+    
+    This pattern ensures:
+    - Connection is always closed
+    - Transactions are properly handled
+    - Resource leaks are prevented
+    - Exception safety is maintained
+    """
+    db = DBSession()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# Usage in endpoints
+@app.post("/items/")
+async def create_item(
+    item: Item, 
+    db: Annotated[DBSession, Depends(get_db)]
+) -> Dict:
+    """Create item with automatic session management."""
+    db.transaction_count += 1
+    # Session automatically cleaned up after endpoint
+    return store_item(db, item)
+```
+
+#### **Exception Safety and Resource Guarantees**
+```python
+# The yield pattern provides exception safety
+async def get_db_with_transaction():
+    """Database session with transaction rollback on exceptions."""
+    db = DBSession()
+    transaction = db.begin()
+    try:
+        yield db
+        transaction.commit()  # Success case
+    except Exception:
+        transaction.rollback()  # Error case
+        raise
+    finally:
+        db.close()  # Always executes, regardless of success/failure
+```
+
+#### **Multiple Resource Management**
+```python
+async def get_db_and_cache():
+    """Manage multiple resources with proper cleanup ordering."""
+    db = None
+    cache = None
+    try:
+        db = create_db_connection()
+        cache = create_cache_connection()
+        yield {"db": db, "cache": cache}
+    finally:
+        # Cleanup in reverse order
+        if cache:
+            cache.close()
+        if db:
+            db.close()
+```
+
+### Real-World Production Patterns
+
+#### **SQLAlchemy Session Management**
+```python
+from sqlalchemy.orm import Session
+from database import SessionLocal
+
+async def get_database_session():
+    """Production SQLAlchemy session management."""
+    session: Session = SessionLocal()
+    try:
+        yield session
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+@app.get("/users/{user_id}")
+async def get_user(
+    user_id: int,
+    db: Annotated[Session, Depends(get_database_session)]
+):
+    return db.query(User).filter(User.id == user_id).first()
+```
+
+#### **Async Database Connection Management**
+```python
+import asyncpg
+
+async def get_async_db():
+    """Async PostgreSQL connection with proper cleanup."""
+    conn = await asyncpg.connect(DATABASE_URL)
+    try:
+        yield conn
+    finally:
+        await conn.close()
+
+@app.post("/items/")
+async def create_item_async(
+    item: Item,
+    conn: Annotated[asyncpg.Connection, Depends(get_async_db)]
+):
+    """Create item with async database operations."""
+    result = await conn.execute(
+        "INSERT INTO items (name, price) VALUES ($1, $2) RETURNING id",
+        item.name, item.price
+    )
+    return {"id": result}
+```
+
+#### **File Handle Management**
+```python
+async def get_log_file():
+    """Managed file handle for logging operations."""
+    file_handle = open("application.log", "a")
+    try:
+        yield file_handle
+    finally:
+        file_handle.close()
+
+@app.post("/log-event/")
+async def log_event(
+    event: str,
+    log_file: Annotated[TextIO, Depends(get_log_file)]
+):
+    """Log event with automatic file handle cleanup."""
+    timestamp = datetime.now().isoformat()
+    log_file.write(f"{timestamp}: {event}\n")
+    log_file.flush()
+    return {"status": "logged"}
+```
+
+### Advanced Error Handling and Monitoring
+
+#### **Comprehensive Resource Monitoring**
+```python
+import logging
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def get_monitored_db():
+    """Database session with comprehensive monitoring."""
+    session_id = generate_session_id()
+    logger.info(f"Creating database session {session_id}")
+    
+    db = DBSession()
+    start_time = time.time()
+    
+    try:
+        yield db
+    except Exception as e:
+        logger.error(f"Session {session_id} failed: {e}")
+        raise
+    finally:
+        duration = time.time() - start_time
+        logger.info(f"Session {session_id} closed after {duration:.2f}s")
+        db.close()
+```
+
+#### **Connection Pool Management**
+```python
+from sqlalchemy.pool import QueuePool
+
+class DatabaseManager:
+    """Advanced database management with connection pooling."""
+    
+    def __init__(self):
+        self.engine = create_engine(
+            DATABASE_URL,
+            poolclass=QueuePool,
+            pool_size=10,
+            max_overflow=20,
+            pool_recycle=3600
+        )
+        self.SessionLocal = sessionmaker(bind=self.engine)
+    
+    async def get_session(self):
+        """Pooled database session with health checks."""
+        session = self.SessionLocal()
+        try:
+            # Health check
+            session.execute(text("SELECT 1"))
+            yield session
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+db_manager = DatabaseManager()
+
+async def get_pooled_db():
+    """Get database session from managed pool."""
+    async for session in db_manager.get_session():
+        yield session
+```
+
+### Testing Strategies for Yield Dependencies
+
+#### **Dependency Override for Testing**
+```python
+# Test database dependency override
+async def get_test_db():
+    """Test database session with in-memory database."""
+    db = create_test_db_session()
+    try:
+        yield db
+    finally:
+        db.rollback()  # Don't persist test data
+        db.close()
+
+# In tests
+app.dependency_overrides[get_db] = get_test_db
+
+def test_create_item():
+    """Test item creation with overridden dependency."""
+    response = client.post("/items/", json={"name": "Test", "price": 10.0})
+    assert response.status_code == 200
+    # Test database automatically cleaned up
+```
+
+#### **Mock Resource Testing**
+```python
+from unittest.mock import AsyncMock
+
+async def get_mock_external_service():
+    """Mock external service for testing."""
+    mock_service = AsyncMock()
+    mock_service.api_call.return_value = {"status": "success"}
+    try:
+        yield mock_service
+    finally:
+        # Verify mock calls if needed
+        pass
+
+# Override for isolated testing
+app.dependency_overrides[get_external_service] = get_mock_external_service
+```
+
+### Performance Optimization Patterns
+
+#### **Connection Caching and Reuse**
+```python
+import asyncio
+from typing import Dict
+
+class ConnectionCache:
+    """Smart connection caching for improved performance."""
+    
+    def __init__(self):
+        self._connections: Dict[str, Any] = {}
+        self._locks: Dict[str, asyncio.Lock] = {}
+    
+    async def get_or_create_connection(self, key: str):
+        """Get cached connection or create new one."""
+        if key not in self._locks:
+            self._locks[key] = asyncio.Lock()
+        
+        async with self._locks[key]:
+            if key not in self._connections:
+                self._connections[key] = await create_connection(key)
+            return self._connections[key]
+
+cache = ConnectionCache()
+
+async def get_cached_db():
+    """Database connection with intelligent caching."""
+    conn = await cache.get_or_create_connection("primary_db")
+    try:
+        yield conn
+    finally:
+        # Connection returned to cache, not closed
+        pass
+```
+
+#### **Lazy Resource Initialization**
+```python
+async def get_lazy_service():
+    """Lazy initialization of expensive resources."""
+    service = None
+    try:
+        # Only create when first accessed
+        def get_service():
+            nonlocal service
+            if service is None:
+                service = ExpensiveService()
+            return service
+        
+        yield get_service
+    finally:
+        if service is not None:
+            await service.cleanup()
+```
+
+### Enterprise Patterns and Best Practices
+
+#### **Multi-Tenant Resource Management**
+```python
+async def get_tenant_db(tenant_id: str = Header()):
+    """Tenant-specific database connections."""
+    connection_string = get_tenant_connection_string(tenant_id)
+    db = create_connection(connection_string)
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.get("/tenant-data/")
+async def get_tenant_data(
+    tenant_db: Annotated[Connection, Depends(get_tenant_db)]
+):
+    """Access tenant-specific data with isolated connections."""
+    return fetch_tenant_data(tenant_db)
+```
+
+#### **Circuit Breaker Pattern with Yield**
+```python
+from circuit_breaker import CircuitBreaker
+
+async def get_protected_service():
+    """External service with circuit breaker protection."""
+    circuit_breaker = CircuitBreaker(
+        failure_threshold=5,
+        recovery_timeout=30
+    )
+    
+    service = None
+    try:
+        if circuit_breaker.is_closed():
+            service = ExternalService()
+            yield service
+        else:
+            raise ServiceUnavailableError("Circuit breaker open")
+    except Exception as e:
+        circuit_breaker.record_failure()
+        raise
+    else:
+        circuit_breaker.record_success()
+    finally:
+        if service:
+            await service.close()
+```
+
+### Key Learning Points
+- **Yield pattern guarantees resource cleanup** even when exceptions occur
+- **Setup/teardown lifecycle** provides deterministic resource management
+- **Exception safety** ensures no resource leaks in production applications
+- **Context manager behavior** through try/yield/finally pattern
+- **Database session management** with automatic connection cleanup
+- **Multi-resource coordination** with proper cleanup ordering
+- **Testing strategies** using dependency overrides and mocking
+- **Performance optimization** through caching and connection pooling
+- **Production patterns** include monitoring, health checks, and error handling
+- **Enterprise features** support multi-tenancy and circuit breaker patterns
+
+This lesson establishes the foundation for building robust, production-ready applications where resource management is handled automatically and safely, preventing memory leaks and ensuring reliable service operation!
