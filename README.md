@@ -57,6 +57,7 @@ FastAPI_handson/
 ├── 22Classesanddependencies.py
 ├── 23dependency-subdependencies.py
 ├── 24decorator dependencies.py
+├── 25globaldependences.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -7949,3 +7950,743 @@ async def check_maintenance_mode():
 - **Flexible architecture** allows dependencies to work as both decorators and regular dependencies
 
 This lesson establishes essential patterns for implementing robust security and cross-cutting concerns in FastAPI applications while maintaining clean, testable code architecture!
+
+---
+
+## Lesson 25: Global Dependencies
+
+### Overview
+- **Purpose**: Master global dependency implementation for application-wide security and cross-cutting concerns that automatically apply to all endpoints
+- **Key Concepts**: Global dependency injection, application-level security enforcement, automatic validation across all endpoints
+- **Use Cases**: Application-wide authentication, universal security policies, global logging and monitoring, API-wide rate limiting
+
+### File: `25globaldependences.py`
+
+This lesson introduces global dependencies in FastAPI, demonstrating how to implement security validation and cross-cutting concerns that automatically execute for every request across the entire application without requiring explicit dependency declarations on individual endpoints.
+
+### Core Concepts
+
+#### **Global Dependencies vs Endpoint Dependencies**
+```python
+# Without Global Dependencies (repetitive)
+@app.get("/items/", dependencies=[Depends(verify_token), Depends(verify_key)])
+async def read_items():
+    return [{"item": "Foo"}]
+
+@app.get("/users/", dependencies=[Depends(verify_token), Depends(verify_key)])
+async def read_users():
+    return [{"username": "John"}]
+
+# With Global Dependencies (automatic)
+app = FastAPI(dependencies=[Depends(verify_token), Depends(verify_key)])
+
+@app.get("/items/")  # Automatically protected
+async def read_items():
+    return [{"item": "Foo"}]
+
+@app.get("/users/")  # Automatically protected  
+async def read_users():
+    return [{"username": "John"}]
+```
+
+#### **Global Dependency Execution Flow**
+```
+HTTP Request
+    │
+    ├─ Global Dependency 1: verify_token() ──► Validates X-Token header
+    │   └─ Raises 400 if invalid token
+    │
+    ├─ Global Dependency 2: verify_key() ──► Validates X-Key header
+    │   └─ Raises 400 if invalid key
+    │
+    └─ Endpoint Function ──► Business logic (only if all validations pass)
+        └─ Returns response
+```
+
+### Implementation Details
+
+#### **Global Authentication Dependency**
+```python
+async def verify_token(x_token: Annotated[str, Header()]):
+    """
+    Global authentication dependency for validating X-Token headers.
+    
+    Automatically validates authentication tokens for every request
+    without requiring explicit dependency declaration on endpoints.
+    """
+    if x_token != "fake-super-secret-token":
+        raise HTTPException(status_code=400, detail="Invalid X-Token header")
+```
+
+**Key Features:**
+- **Automatic Execution**: Runs for every request to any endpoint
+- **Fail-Fast Security**: Invalid tokens immediately terminate processing
+- **No Injection**: Focuses on validation, not data injection
+- **Application-Wide**: Impossible to bypass or forget
+
+#### **Global Authorization Dependency**
+```python
+async def verify_key(x_key: Annotated[str, Header()]):
+    """
+    Global authorization dependency for validating X-Key headers.
+    
+    Creates second layer of security by validating API keys
+    after successful token authentication.
+    """
+    if x_key != "fake-super-secret-key":
+        raise HTTPException(status_code=400, detail="Invalid X-Key header")
+    return x_key  # Available for injection if needed locally
+```
+
+**Advanced Features:**
+- **Multi-Layer Security**: Works with verify_token for comprehensive protection
+- **Hybrid Capability**: Can work as both global and local dependency
+- **Return Value**: Available for injection when used as local dependency
+- **Order Dependency**: Executes after verify_token in the dependency chain
+
+#### **FastAPI Global Configuration**
+```python
+app = FastAPI(dependencies=[Depends(verify_token), Depends(verify_key)])
+```
+
+**Configuration Benefits:**
+- **Centralized Security**: Single point of security configuration
+- **Automatic Application**: All endpoints inherit global dependencies
+- **Consistent Enforcement**: Uniform security across the application
+- **Easy Maintenance**: Update security in one location
+
+### Global Dependencies Benefits
+
+#### **Architecture Advantages**
+
+| Aspect | Without Global Dependencies | With Global Dependencies |
+|--------|----------------------------|-------------------------|
+| **Security Declaration** | Manual on every endpoint | Automatic application-wide |
+| **Code Duplication** | Repetitive dependency lists | Single configuration |
+| **Maintenance** | Update multiple endpoints | Update one location |
+| **Consistency** | Easy to miss endpoints | Guaranteed coverage |
+| **Testing** | Complex security testing | Simplified security validation |
+
+#### **Clean Endpoint Implementation**
+```python
+# Before: Cluttered with security dependencies
+@app.get("/items/", dependencies=[Depends(verify_token), Depends(verify_key)])
+async def read_items():
+    return [{"item": "Portal Gun"}, {"item": "Plumbus"}]
+
+@app.get("/users/", dependencies=[Depends(verify_token), Depends(verify_key)])
+async def read_users():
+    return [{"username": "Rick"}, {"username": "Morty"}]
+
+# After: Clean business logic focus
+@app.get("/items/")
+async def read_items():
+    """Clean endpoint - security handled globally."""
+    return [{"item": "Portal Gun"}, {"item": "Plumbus"}]
+
+@app.get("/users/")
+async def read_users():
+    """Pure business logic - global security automatic."""
+    return [{"username": "Rick"}, {"username": "Morty"}]
+```
+
+### Advanced Global Dependency Patterns
+
+#### **Multi-Layer Global Security**
+```python
+# Authentication layer
+async def authenticate_user(authorization: str = Header(...)):
+    """Global JWT authentication."""
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Invalid authorization format")
+    
+    token = authorization[7:]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        request.state.user_id = payload.get("sub")
+        request.state.username = payload.get("username")
+    except JWTError:
+        raise HTTPException(401, "Invalid token")
+
+# Authorization layer
+async def authorize_api_access(x_api_key: str = Header(...)):
+    """Global API key authorization."""
+    key_info = await validate_api_key(x_api_key)
+    if not key_info or not key_info["active"]:
+        raise HTTPException(401, "Invalid API key")
+    
+    request.state.api_permissions = key_info["permissions"]
+    request.state.rate_limit = key_info["rate_limit"]
+
+# Rate limiting layer
+async def global_rate_limit(request: Request):
+    """Global rate limiting based on API key."""
+    if not hasattr(request.state, "rate_limit"):
+        return  # Skip if no API key context
+    
+    user_id = request.state.user_id
+    current_requests = await get_user_request_count(user_id)
+    
+    if current_requests > request.state.rate_limit:
+        raise HTTPException(429, "Rate limit exceeded")
+    
+    await increment_user_request_count(user_id)
+
+# Audit logging layer
+async def global_audit_log(request: Request):
+    """Global request auditing."""
+    audit_data = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "method": request.method,
+        "path": str(request.url.path),
+        "user_id": getattr(request.state, "user_id", "anonymous"),
+        "client_ip": request.client.host
+    }
+    
+    audit_logger.info(audit_data)
+
+# Complete global security stack
+app = FastAPI(dependencies=[
+    Depends(authenticate_user),      # 1. Authentication
+    Depends(authorize_api_access),   # 2. Authorization  
+    Depends(global_rate_limit),      # 3. Rate limiting
+    Depends(global_audit_log)        # 4. Auditing
+])
+```
+
+#### **Environment-Based Global Dependencies**
+```python
+import os
+from typing import List, Callable
+
+def get_global_dependencies() -> List[Callable]:
+    """Configure global dependencies based on environment."""
+    
+    dependencies = []
+    
+    # Always include basic authentication
+    dependencies.append(Depends(verify_token))
+    
+    # Production-specific dependencies
+    if os.getenv("ENVIRONMENT") == "production":
+        dependencies.extend([
+            Depends(verify_api_key),
+            Depends(rate_limit_strict),
+            Depends(audit_all_requests),
+            Depends(security_headers)
+        ])
+    
+    # Development-specific dependencies
+    elif os.getenv("ENVIRONMENT") == "development":
+        dependencies.extend([
+            Depends(log_all_requests),
+            Depends(cors_permissive)
+        ])
+    
+    # Testing environment - minimal dependencies
+    elif os.getenv("ENVIRONMENT") == "test":
+        dependencies.append(Depends(basic_logging))
+    
+    return dependencies
+
+# Dynamic global dependency configuration
+app = FastAPI(dependencies=get_global_dependencies())
+```
+
+#### **Conditional Global Dependencies**
+```python
+async def conditional_security(request: Request):
+    """Apply different security based on endpoint patterns."""
+    
+    path = request.url.path
+    
+    # Public endpoints - no additional security
+    if path.startswith("/public/"):
+        return
+    
+    # Admin endpoints - require admin role
+    if path.startswith("/admin/"):
+        await require_admin_role(request)
+    
+    # API endpoints - require API key
+    elif path.startswith("/api/"):
+        await require_api_key(request)
+    
+    # Default - require basic authentication
+    else:
+        await require_basic_auth(request)
+
+async def maintenance_mode_check():
+    """Global maintenance mode enforcement."""
+    if MAINTENANCE_MODE and not request.url.path.startswith("/health"):
+        raise HTTPException(503, "Service temporarily unavailable")
+
+# Conditional global dependencies
+app = FastAPI(dependencies=[
+    Depends(maintenance_mode_check),
+    Depends(conditional_security),
+    Depends(global_logging)
+])
+```
+
+### Real-World Global Implementation
+
+#### **Enterprise Security Stack**
+```python
+# Complete enterprise global dependency stack
+async def global_authentication(authorization: str = Header(...)):
+    """Enterprise JWT authentication with role extraction."""
+    try:
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(401, "Bearer token required")
+        
+        token = authorization[7:]
+        payload = jwt.decode(token, get_jwt_secret(), algorithms=["HS256"])
+        
+        # Extract and validate user info
+        user_id = payload.get("sub")
+        roles = payload.get("roles", [])
+        permissions = payload.get("permissions", [])
+        
+        if not user_id:
+            raise HTTPException(401, "Invalid token payload")
+        
+        # Store in request state for endpoint access
+        request.state.user_id = user_id
+        request.state.user_roles = roles
+        request.state.user_permissions = permissions
+        request.state.token_issued_at = payload.get("iat")
+        
+    except JWTError as e:
+        logger.warning(f"JWT validation failed: {str(e)}")
+        raise HTTPException(401, "Invalid token")
+
+async def global_authorization(request: Request):
+    """Role-based access control validation."""
+    
+    # Extract required permissions from endpoint metadata
+    route = request.scope.get("route")
+    required_permissions = getattr(route, "required_permissions", [])
+    
+    if required_permissions:
+        user_permissions = getattr(request.state, "user_permissions", [])
+        
+        if not any(perm in user_permissions for perm in required_permissions):
+            raise HTTPException(403, "Insufficient permissions")
+
+async def global_request_validation(request: Request):
+    """Validate request headers and format."""
+    
+    # Require specific headers for API requests
+    if request.url.path.startswith("/api/v"):
+        api_version = request.headers.get("API-Version")
+        if not api_version:
+            raise HTTPException(400, "API-Version header required")
+        
+        # Validate API version
+        try:
+            version = float(api_version)
+            if version < MIN_API_VERSION or version > MAX_API_VERSION:
+                raise HTTPException(400, f"Unsupported API version: {api_version}")
+        except ValueError:
+            raise HTTPException(400, "Invalid API version format")
+    
+    # Validate request size
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_REQUEST_SIZE:
+        raise HTTPException(413, "Request entity too large")
+
+async def global_monitoring(request: Request):
+    """Comprehensive request monitoring and metrics."""
+    
+    # Start timing
+    request.state.start_time = time.time()
+    
+    # Extract monitoring data
+    user_id = getattr(request.state, "user_id", "anonymous")
+    endpoint = f"{request.method} {request.url.path}"
+    
+    # Increment request metrics
+    REQUEST_COUNT.labels(
+        method=request.method,
+        endpoint=request.url.path,
+        user_id=user_id
+    ).inc()
+    
+    # Log high-level request info
+    logger.info(
+        f"Request started: {endpoint} by user {user_id} from {request.client.host}"
+    )
+
+# Enterprise FastAPI application
+app = FastAPI(
+    title="Enterprise API",
+    dependencies=[
+        Depends(global_authentication),     # JWT validation
+        Depends(global_authorization),      # RBAC enforcement
+        Depends(global_request_validation), # Request validation
+        Depends(global_monitoring)          # Monitoring & metrics
+    ]
+)
+```
+
+#### **Multi-Tenant Global Dependencies**
+```python
+async def extract_tenant_context(request: Request):
+    """Extract tenant information from various sources."""
+    
+    tenant_id = None
+    
+    # Try header first
+    tenant_id = request.headers.get("X-Tenant-ID")
+    
+    # Try subdomain if no header
+    if not tenant_id:
+        host = request.headers.get("host", "")
+        if "." in host:
+            subdomain = host.split(".")[0]
+            if subdomain != "www":
+                tenant_id = subdomain
+    
+    # Try user's default tenant
+    if not tenant_id and hasattr(request.state, "user_id"):
+        user_tenant = await get_user_default_tenant(request.state.user_id)
+        tenant_id = user_tenant
+    
+    if not tenant_id:
+        raise HTTPException(400, "Tenant identification required")
+    
+    # Validate tenant access
+    if hasattr(request.state, "user_id"):
+        has_access = await validate_tenant_access(
+            request.state.user_id, 
+            tenant_id
+        )
+        if not has_access:
+            raise HTTPException(403, "Tenant access denied")
+    
+    request.state.tenant_id = tenant_id
+
+async def tenant_database_routing(request: Request):
+    """Route database connections based on tenant."""
+    
+    if not hasattr(request.state, "tenant_id"):
+        raise HTTPException(500, "Tenant context missing")
+    
+    # Get tenant-specific database connection
+    db_config = await get_tenant_database_config(request.state.tenant_id)
+    request.state.db_connection = await create_connection(db_config)
+
+# Multi-tenant application
+app = FastAPI(dependencies=[
+    Depends(global_authentication),
+    Depends(extract_tenant_context),
+    Depends(tenant_database_routing)
+])
+```
+
+### Testing Global Dependencies
+
+#### **Global Dependency Testing Strategies**
+```python
+import pytest
+from fastapi.testclient import TestClient
+
+class TestGlobalDependencies:
+    
+    def test_global_token_validation(self):
+        """Test global token validation across all endpoints."""
+        client = TestClient(app)
+        
+        # Test all endpoints with valid credentials
+        valid_headers = {
+            "X-Token": "fake-super-secret-token",
+            "X-Key": "fake-super-secret-key"
+        }
+        
+        endpoints = ["/items/", "/users/"]
+        
+        for endpoint in endpoints:
+            response = client.get(endpoint, headers=valid_headers)
+            assert response.status_code == 200, f"Failed on {endpoint}"
+    
+    def test_global_security_rejection(self):
+        """Test global security rejects invalid credentials."""
+        client = TestClient(app)
+        
+        test_cases = [
+            {
+                "headers": {"X-Token": "wrong-token", "X-Key": "fake-super-secret-key"},
+                "expected_error": "Invalid X-Token header"
+            },
+            {
+                "headers": {"X-Token": "fake-super-secret-token", "X-Key": "wrong-key"},
+                "expected_error": "Invalid X-Key header"
+            },
+            {
+                "headers": {},
+                "expected_status": 422  # Missing required headers
+            }
+        ]
+        
+        for case in test_cases:
+            for endpoint in ["/items/", "/users/"]:
+                response = client.get(endpoint, headers=case["headers"])
+                
+                if "expected_status" in case:
+                    assert response.status_code == case["expected_status"]
+                else:
+                    assert response.status_code == 400
+                    assert case["expected_error"] in response.json()["detail"]
+    
+    def test_dependency_execution_order(self):
+        """Test that global dependencies execute in correct order."""
+        client = TestClient(app)
+        
+        # Invalid token should fail before key validation
+        response = client.get(
+            "/items/",
+            headers={
+                "X-Token": "wrong-token",  # This should fail first
+                "X-Key": "also-wrong"      # This should never be checked
+            }
+        )
+        
+        assert response.status_code == 400
+        assert "Invalid X-Token header" in response.json()["detail"]
+        # Should not see key validation error
+    
+    def test_global_dependency_override(self):
+        """Test overriding global dependencies for testing."""
+        
+        # Mock global dependencies
+        async def mock_verify_token(x_token: str = Header(...)):
+            pass  # Always pass
+        
+        async def mock_verify_key(x_key: str = Header(...)):
+            return "mocked-key"
+        
+        # Override global dependencies
+        app.dependency_overrides[verify_token] = mock_verify_token
+        app.dependency_overrides[verify_key] = mock_verify_key
+        
+        client = TestClient(app)
+        response = client.get("/items/")  # No headers needed
+        
+        assert response.status_code == 200
+        
+        # Clean up
+        app.dependency_overrides = {}
+    
+    def test_business_logic_isolation(self):
+        """Test business logic separate from security."""
+        
+        # Override security for pure business logic testing
+        app.dependency_overrides[verify_token] = lambda: None
+        app.dependency_overrides[verify_key] = lambda: "test-key"
+        
+        client = TestClient(app)
+        
+        # Test items endpoint logic
+        response = client.get("/items/")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+        assert data[0]["item"] == "Portal Gun"
+        assert data[1]["item"] == "Plumbus"
+        
+        # Test users endpoint logic
+        response = client.get("/users/")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+        assert data[0]["username"] == "Rick"
+        assert data[1]["username"] == "Morty"
+        
+        # Clean up
+        app.dependency_overrides = {}
+```
+
+#### **Integration Testing with Global Dependencies**
+```python
+def test_complete_request_flow():
+    """Test complete request flow through global dependencies."""
+    client = TestClient(app)
+    
+    # Test successful flow
+    response = client.get(
+        "/items/",
+        headers={
+            "X-Token": "fake-super-secret-token",
+            "X-Key": "fake-super-secret-key"
+        }
+    )
+    
+    assert response.status_code == 200
+    assert response.json() == [
+        {"item": "Portal Gun"},
+        {"item": "Plumbus"}
+    ]
+
+def test_security_metrics_collection():
+    """Test that global dependencies collect security metrics."""
+    
+    # Setup metrics collection
+    with patch('prometheus_client.Counter') as mock_counter:
+        client = TestClient(app)
+        
+        # Make requests with different credentials
+        client.get("/items/", headers={
+            "X-Token": "fake-super-secret-token",
+            "X-Key": "fake-super-secret-key"
+        })
+        
+        client.get("/items/", headers={
+            "X-Token": "wrong-token",
+            "X-Key": "fake-super-secret-key"
+        })
+        
+        # Verify metrics were recorded
+        assert mock_counter.called
+```
+
+### Performance and Production Considerations
+
+#### **Global Dependency Optimization**
+```python
+# Efficient global validation
+@lru_cache(maxsize=1000)
+def validate_token_cached(token: str) -> bool:
+    """Cache token validation results."""
+    # Expensive validation logic
+    return token == "fake-super-secret-token"
+
+async def optimized_verify_token(x_token: str = Header(...)):
+    """Optimized token validation with caching."""
+    if not validate_token_cached(x_token):
+        raise HTTPException(400, "Invalid X-Token header")
+
+# Async optimization for database validations
+async def async_verify_api_key(x_key: str = Header(...)):
+    """Async API key validation with connection pooling."""
+    
+    async with get_connection_pool().acquire() as conn:
+        result = await conn.fetchrow(
+            "SELECT active FROM api_keys WHERE key_hash = $1",
+            hashlib.sha256(x_key.encode()).hexdigest()
+        )
+    
+    if not result or not result["active"]:
+        raise HTTPException(400, "Invalid X-Key header")
+    
+    return x_key
+```
+
+#### **Monitoring Global Dependencies**
+```python
+from prometheus_client import Counter, Histogram
+
+# Global dependency metrics
+GLOBAL_DEPENDENCY_DURATION = Histogram(
+    "global_dependency_duration_seconds",
+    "Time spent in global dependencies",
+    ["dependency_name", "status"]
+)
+
+GLOBAL_DEPENDENCY_EXECUTIONS = Counter(
+    "global_dependency_executions_total",
+    "Total global dependency executions",
+    ["dependency_name", "status"]
+)
+
+async def monitored_verify_token(x_token: str = Header(...)):
+    """Token verification with monitoring."""
+    
+    with GLOBAL_DEPENDENCY_DURATION.labels(
+        dependency_name="verify_token",
+        status="success"
+    ).time():
+        try:
+            if x_token != "fake-super-secret-token":
+                GLOBAL_DEPENDENCY_EXECUTIONS.labels(
+                    dependency_name="verify_token",
+                    status="failed"
+                ).inc()
+                raise HTTPException(400, "Invalid X-Token header")
+            
+            GLOBAL_DEPENDENCY_EXECUTIONS.labels(
+                dependency_name="verify_token",
+                status="success"
+            ).inc()
+            
+        except Exception:
+            GLOBAL_DEPENDENCY_EXECUTIONS.labels(
+                dependency_name="verify_token",
+                status="error"
+            ).inc()
+            raise
+```
+
+### Application-Level Patterns
+
+#### **Router-Level vs Global Dependencies**
+```python
+# Global dependencies (apply to entire app)
+app = FastAPI(dependencies=[Depends(basic_auth)])
+
+# Router-level dependencies (apply to specific routes)
+admin_router = APIRouter(
+    prefix="/admin",
+    dependencies=[
+        Depends(require_admin_role),
+        Depends(audit_admin_actions)
+    ]
+)
+
+api_router = APIRouter(
+    prefix="/api/v1",
+    dependencies=[
+        Depends(require_api_key),
+        Depends(rate_limit_api)
+    ]
+)
+
+# Combine different dependency levels
+app.include_router(admin_router)  # Gets global + router dependencies
+app.include_router(api_router)    # Gets global + router dependencies
+```
+
+#### **Selective Global Dependencies**
+```python
+def create_app_with_selective_globals():
+    """Create app with conditional global dependencies."""
+    
+    # Base dependencies for all environments
+    base_dependencies = [Depends(basic_logging)]
+    
+    # Add production-specific globals
+    if ENVIRONMENT == "production":
+        base_dependencies.extend([
+            Depends(strict_authentication),
+            Depends(rate_limiting),
+            Depends(security_headers)
+        ])
+    
+    return FastAPI(dependencies=base_dependencies)
+
+app = create_app_with_selective_globals()
+```
+
+### Key Learning Points
+- **Global dependencies execute automatically** for every request across all endpoints
+- **Application-wide security enforcement** without explicit endpoint configuration
+- **Clean endpoint signatures** focus on business logic while security is handled globally
+- **Multi-layer security architecture** through ordered global dependency execution
+- **Fail-fast validation** stops processing immediately on security failures
+- **Centralized maintenance** allows security updates in a single location
+- **Consistent behavior** ensures uniform security across the entire application
+- **Testing strategies** include dependency overrides and business logic isolation
+- **Performance optimization** through caching and async operations
+- **Real-world patterns** include enterprise security stacks and multi-tenant applications
+
+This lesson establishes the foundation for building secure, maintainable applications where comprehensive security and cross-cutting concerns are automatically enforced across all endpoints without compromising code clarity or business logic focus!
