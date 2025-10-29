@@ -59,6 +59,7 @@ FastAPI_handson/
 ├── 24decorator dependencies.py
 ├── 25globaldependences.py
 ├── 26dependencieswithyield.py
+├── 27securityfirststeps.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -9104,3 +9105,361 @@ async def get_protected_service():
 - **Enterprise features** support multi-tenancy and circuit breaker patterns
 
 This lesson establishes the foundation for building robust, production-ready applications where resource management is handled automatically and safely, preventing memory leaks and ensuring reliable service operation!
+
+---
+
+## Lesson 27: Security First Steps
+
+### Overview
+- **Purpose**: Introduction to FastAPI security fundamentals using OAuth2 Password Bearer tokens for API authentication
+- **Key Concepts**: OAuth2 authentication, Bearer tokens, Authorization headers, security scheme configuration, protected endpoints
+- **Use Cases**: API authentication, mobile app backends, web application security, microservice authentication, RESTful API protection
+
+### File: `27securityfirststeps.py`
+
+This lesson introduces the foundational concepts of security in FastAPI, demonstrating how to implement basic OAuth2 authentication using Bearer tokens. Learn how FastAPI integrates security seamlessly with automatic token extraction, OpenAPI documentation, and interactive testing capabilities.
+
+### Core Concepts
+
+#### **OAuth2 Password Bearer Authentication Flow**
+```
+Client Authentication Request
+    │
+    ├─ Step 1: Client obtains token from /token endpoint
+    │   └─ POST /token with username/password
+    │   └─ Receives: {"access_token": "abc123", "token_type": "bearer"}
+    │
+    ├─ Step 2: Client includes token in subsequent requests
+    │   └─ Header: Authorization: Bearer abc123
+    │
+    ├─ Step 3: FastAPI extracts and validates token
+    │   └─ oauth2_scheme dependency processes Authorization header
+    │
+    ├─ Step 4: Protected endpoint receives validated token
+    │   └─ Business logic executes with authenticated context
+    │
+Protected Resource Accessed
+```
+
+#### **Security Scheme Configuration**
+```python
+from fastapi.security import OAuth2PasswordBearer
+
+# Configure OAuth2 security scheme
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+# This creates a security scheme that:
+# - Expects Authorization: Bearer <token> headers
+# - Shows "Authorize" button in FastAPI docs
+# - Automatically extracts tokens for dependency injection
+# - Returns 401 Unauthorized if no valid token provided
+```
+
+### Implementation Patterns
+
+#### **Basic Protected Endpoint**
+```python
+from typing_extensions import Annotated
+
+@app.get("/items/")
+async def read_items(token: Annotated[str, Depends(oauth2_scheme)]):
+    """
+    Protected endpoint requiring Bearer token authentication.
+    
+    The token parameter is automatically populated by FastAPI:
+    - Extracts token from Authorization: Bearer <token> header
+    - Returns 401 if no token provided
+    - Passes token string to endpoint for processing
+    """
+    return {"token": token}
+
+# Usage examples:
+# ✅ GET /items/ with "Authorization: Bearer my-token" → Returns {"token": "my-token"}
+# ❌ GET /items/ without Authorization header → Returns 401 Unauthorized
+```
+
+#### **FastAPI Security Integration Features**
+```python
+# Automatic OpenAPI documentation
+app = FastAPI(
+    title="Security First Steps API",
+    description="OAuth2 Bearer token authentication demo"
+)
+
+# Features automatically enabled:
+# 1. Padlock icon on protected endpoints in /docs
+# 2. "Authorize" button for interactive testing
+# 3. Security scheme documentation in OpenAPI spec
+# 4. Consistent 401 error responses
+# 5. Security requirement indicators in API docs
+```
+
+### Advanced Security Patterns
+
+#### **Token Validation and User Identification**
+```python
+from fastapi import HTTPException, status
+
+# Simulated user database
+fake_users_db = {
+    "user123": {"username": "john", "email": "john@example.com"},
+    "user456": {"username": "jane", "email": "jane@example.com"}
+}
+
+async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
+    """
+    Validate token and return current user information.
+    
+    This pattern extends basic token extraction with actual validation:
+    - Decode JWT tokens or lookup in database
+    - Verify token hasn't expired
+    - Return user object for endpoint use
+    """
+    # In production: validate JWT, check database, verify expiration
+    user = fake_users_db.get(token)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+@app.get("/users/me")
+async def read_users_me(current_user: Annotated[dict, Depends(get_current_user)]):
+    """Get current user information with validated token."""
+    return current_user
+```
+
+#### **Multiple Security Levels**
+```python
+# Basic token extraction (lesson 27 level)
+@app.get("/public-with-optional-auth/")
+async def public_endpoint(token: Annotated[str, Depends(oauth2_scheme)]):
+    """Public endpoint that accepts optional authentication."""
+    return {"message": "public", "authenticated_token": token}
+
+# User validation (intermediate level)
+@app.get("/protected-user/")
+async def protected_user_endpoint(
+    current_user: Annotated[dict, Depends(get_current_user)]
+):
+    """Endpoint requiring valid user authentication."""
+    return {"message": "protected", "user": current_user}
+
+# Role-based access (advanced level)
+async def require_admin_role(
+    current_user: Annotated[dict, Depends(get_current_user)]
+):
+    """Dependency that requires admin role."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(403, "Admin access required")
+    return current_user
+
+@app.get("/admin-only/")
+async def admin_endpoint(
+    admin_user: Annotated[dict, Depends(require_admin_role)]
+):
+    """Endpoint requiring admin role."""
+    return {"message": "admin area", "admin": admin_user}
+```
+
+### Testing and Development Patterns
+
+#### **Interactive Testing with FastAPI Docs**
+```python
+# Development testing workflow:
+# 1. Start server: uvicorn main:app --reload
+# 2. Open browser: http://localhost:8000/docs
+# 3. Click "Authorize" button in top-right
+# 4. Enter any token value (e.g., "test-token")
+# 5. Test protected endpoints interactively
+
+# The docs interface will:
+# - Show padlock icons on protected endpoints
+# - Include Authorization header automatically
+# - Display security requirements clearly
+# - Allow easy testing of different tokens
+```
+
+#### **Manual Testing with curl**
+```bash
+# Test protected endpoint with token
+curl -H "Authorization: Bearer my-test-token" \
+     http://localhost:8000/items/
+
+# Expected response: {"token": "my-test-token"}
+
+# Test without token (should return 401)
+curl http://localhost:8000/items/
+
+# Expected response: {"detail": "Not authenticated"}
+```
+
+#### **Automated Testing Patterns**
+```python
+from fastapi.testclient import TestClient
+
+def test_protected_endpoint_with_token():
+    """Test protected endpoint with valid token."""
+    response = client.get(
+        "/items/",
+        headers={"Authorization": "Bearer test-token"}
+    )
+    assert response.status_code == 200
+    assert response.json() == {"token": "test-token"}
+
+def test_protected_endpoint_without_token():
+    """Test protected endpoint returns 401 without token."""
+    response = client.get("/items/")
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not authenticated"}
+
+def test_protected_endpoint_invalid_header():
+    """Test invalid Authorization header format."""
+    response = client.get(
+        "/items/",
+        headers={"Authorization": "InvalidFormat token"}
+    )
+    assert response.status_code == 401
+```
+
+### Production Security Considerations
+
+#### **JWT Token Implementation**
+```python
+import jwt
+from datetime import datetime, timedelta
+
+SECRET_KEY = "your-secret-key"  # Use environment variable in production
+ALGORITHM = "HS256"
+
+def create_access_token(data: dict, expires_delta: timedelta = None):
+    """Create JWT access token with expiration."""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+async def get_current_user_jwt(token: Annotated[str, Depends(oauth2_scheme)]):
+    """Validate JWT token and return user."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(401, "Invalid token")
+    except jwt.PyJWTError:
+        raise HTTPException(401, "Invalid token")
+    
+    # Get user from database
+    user = get_user_from_db(username)
+    if user is None:
+        raise HTTPException(401, "User not found")
+    return user
+```
+
+#### **Security Best Practices**
+```python
+# Environment-based configuration
+import os
+
+class SecuritySettings:
+    """Security configuration from environment variables."""
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-secret-key")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    TOKEN_URL: str = os.getenv("TOKEN_URL", "token")
+    
+    # Production security headers
+    CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "*").split(",")
+    HTTPS_ONLY: bool = os.getenv("HTTPS_ONLY", "false").lower() == "true"
+
+settings = SecuritySettings()
+
+# Production OAuth2 configuration
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl=settings.TOKEN_URL,
+    scheme_name="JWT"  # Better OpenAPI documentation
+)
+
+# HTTPS enforcement in production
+if settings.HTTPS_ONLY:
+    app.add_middleware(
+        HTTPSRedirectMiddleware
+    )
+```
+
+#### **Rate Limiting and Security Headers**
+```python
+from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+
+# Rate limiting for authentication endpoints
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(429, _rate_limit_exceeded_handler)
+
+@app.post("/token")
+@limiter.limit("5/minute")  # Limit token requests
+async def login(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends()
+):
+    """Rate-limited token endpoint."""
+    return authenticate_user(form_data.username, form_data.password)
+
+# Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    """Add security headers to all responses."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
+```
+
+### Real-World Implementation Roadmap
+
+#### **Phase 1: Basic Authentication (This Lesson)**
+- ✅ OAuth2PasswordBearer setup
+- ✅ Token extraction from Authorization headers
+- ✅ Protected endpoint patterns
+- ✅ FastAPI docs integration
+
+#### **Phase 2: User Management (Next Lessons)**
+- 🔄 User registration and login endpoints
+- 🔄 Password hashing with bcrypt
+- 🔄 User session management
+- 🔄 Token validation logic
+
+#### **Phase 3: Advanced Security (Future Lessons)**
+- 🔄 JWT token implementation
+- 🔄 Refresh token patterns
+- 🔄 Role-based access control (RBAC)
+- 🔄 OAuth2 scopes and permissions
+
+#### **Phase 4: Production Security (Advanced Topics)**
+- 🔄 Multi-factor authentication (MFA)
+- 🔄 OAuth2 provider integration (Google, GitHub)
+- 🔄 Rate limiting and DDoS protection
+- 🔄 Security auditing and logging
+
+### Key Learning Points
+- **OAuth2PasswordBearer provides foundational token authentication** for FastAPI applications
+- **Automatic token extraction** from Authorization headers simplifies security implementation
+- **FastAPI docs integration** enables interactive testing and clear API documentation
+- **Dependency injection pattern** makes security composable and testable
+- **Security scheme configuration** establishes consistent authentication across all endpoints
+- **Production readiness** requires JWT tokens, proper validation, and security best practices
+- **Testing strategies** include automated tests and interactive documentation testing
+- **Progressive enhancement** allows building from basic tokens to enterprise security
+- **OpenAPI integration** provides clear security documentation for API consumers
+- **Foundation for advanced patterns** like user management, roles, and OAuth2 scopes
+
+This lesson establishes the essential foundation for API security in FastAPI, providing the building blocks for comprehensive authentication and authorization systems in production applications!
