@@ -56,6 +56,7 @@ FastAPI_handson/
 ├── 21Dependenciesstart.py
 ├── 22Classesanddependencies.py
 ├── 23dependency-subdependencies.py
+├── 24decorator dependencies.py
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
@@ -7290,3 +7291,661 @@ def robust_cookie_fallback(
 - **Modular design principles** make complex applications more maintainable and testable
 
 This lesson establishes advanced dependency injection patterns that enable sophisticated parameter processing workflows with excellent user experience and robust error handling!
+
+---
+
+## Lesson 24: Path Operation Decorator Dependencies
+
+### Overview
+- **Purpose**: Master path operation decorator dependencies for security validation and cross-cutting concerns without parameter injection
+- **Key Concepts**: Dependencies parameter, decorator dependencies, security middleware patterns, multi-layer authentication
+- **Use Cases**: API authentication, authorization layers, security header validation, cross-cutting concerns that don't require data injection
+
+### File: `24decorator dependencies.py`
+
+This lesson introduces decorator dependencies in FastAPI, demonstrating how to use dependencies purely for validation and side effects without injecting their return values into endpoint functions. This pattern is essential for security, logging, and other cross-cutting concerns.
+
+### Core Concepts
+
+#### **Decorator Dependencies vs Regular Dependencies**
+```python
+# Regular dependency (injects return value)
+@app.get("/items/")
+async def read_items(token: str = Depends(get_token)):
+    return {"token": token, "items": [...]}
+
+# Decorator dependency (validation only, no injection)
+@app.get("/items/", dependencies=[Depends(verify_token)])
+async def read_items():
+    return {"items": [...]}  # Clean signature, security handled separately
+```
+
+#### **Dependencies Parameter Pattern**
+```python
+# Single decorator dependency
+@app.get("/protected/", dependencies=[Depends(verify_token)])
+async def protected_endpoint():
+    return {"message": "Access granted"}
+
+# Multiple decorator dependencies (security layers)
+@app.get("/secure/", dependencies=[Depends(verify_token), Depends(verify_key)])
+async def secure_endpoint():
+    return {"data": "highly secure"}
+```
+
+### Implementation Details
+
+#### **Token Validation Dependency**
+```python
+async def verify_token(x_token: Annotated[str, Header()]):
+    """
+    Security dependency for validating authentication tokens.
+    
+    Validates tokens without injecting values into endpoint functions,
+    demonstrating the decorator dependency pattern for security validation.
+    """
+    if x_token != "fake-super-secret-token":
+        raise HTTPException(status_code=400, detail="X-Token header invalid")
+```
+
+**Key Features:**
+- **Header Extraction**: Automatically extracts X-Token from HTTP headers
+- **Validation Logic**: Fails fast with HTTP 400 on invalid tokens
+- **No Return Value**: Used purely for validation, not data injection
+- **Reusable Security**: Can be applied to multiple endpoints
+
+#### **API Key Validation with Return Value**
+```python
+async def verify_key(x_key: Annotated[str, Header()]):
+    """
+    Authorization dependency that validates API keys.
+    
+    Demonstrates hybrid pattern - can be used both as decorator dependency
+    and regular dependency depending on whether return value is needed.
+    """
+    if x_key != "fake-super-secret-key":
+        raise HTTPException(status_code=400, detail="X-Key header invalid")
+    return x_key  # Available for injection if needed
+```
+
+**Advanced Features:**
+- **Dual Purpose**: Works as both decorator and regular dependency
+- **API Key Validation**: Validates authorization credentials
+- **Return Value**: Can inject validated key when needed
+- **Security Layer**: Provides second layer of security validation
+
+#### **Multi-Layer Security Endpoint**
+```python
+@app.get("/items/", dependencies=[Depends(verify_token), Depends(verify_key)])
+async def read_items():
+    """
+    Endpoint protected by multiple security layers.
+    
+    Demonstrates how decorator dependencies enable clean endpoint
+    signatures while enforcing complex security requirements.
+    """
+    return [{"item": "Foo"}, {"item": "Bar"}]
+```
+
+### Decorator Dependencies Benefits
+
+#### **Clean Endpoint Signatures**
+
+| Without Decorator Dependencies | With Decorator Dependencies |
+|-------------------------------|----------------------------|
+| Complex parameter lists | Clean, focused signatures |
+| Security mixed with business logic | Separated concerns |
+| Repetitive security parameters | Reusable security components |
+| Difficult to test | Easy to test separately |
+
+#### **Before: Cluttered Signatures**
+```python
+@app.get("/items/")
+async def read_items(
+    x_token: str = Header(...),
+    x_key: str = Header(...),
+    user_agent: str = Header(...),
+    request_id: str = Header(...)
+):
+    # Validate all headers manually
+    if x_token != "valid-token":
+        raise HTTPException(400, "Invalid token")
+    if x_key != "valid-key":
+        raise HTTPException(400, "Invalid key")
+    
+    # Business logic mixed with security
+    return [{"item": "Foo"}, {"item": "Bar"}]
+```
+
+#### **After: Clean with Decorator Dependencies**
+```python
+# Security dependencies
+async def verify_token(x_token: str = Header(...)):
+    if x_token != "valid-token":
+        raise HTTPException(400, "Invalid token")
+
+async def verify_key(x_key: str = Header(...)):
+    if x_key != "valid-key":
+        raise HTTPException(400, "Invalid key")
+
+async def log_request(user_agent: str = Header(...), request_id: str = Header(...)):
+    logger.info(f"Request {request_id} from {user_agent}")
+
+# Clean endpoint
+@app.get("/items/", dependencies=[
+    Depends(verify_token),
+    Depends(verify_key),
+    Depends(log_request)
+])
+async def read_items():
+    # Pure business logic
+    return [{"item": "Foo"}, {"item": "Bar"}]
+```
+
+### Advanced Decorator Dependency Patterns
+
+#### **Security Middleware Pattern**
+```python
+# Authentication layer
+async def authenticate_user(authorization: str = Header(...)):
+    """Validate JWT token and extract user info."""
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Invalid authorization format")
+    
+    token = authorization[7:]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(401, "Invalid token payload")
+        
+        # Store user info in request state for later use
+        request.state.user_id = user_id
+        request.state.username = payload.get("username")
+        
+    except JWTError:
+        raise HTTPException(401, "Invalid token")
+
+# Authorization layer
+async def require_admin_role(request: Request):
+    """Ensure authenticated user has admin role."""
+    if not hasattr(request.state, "user_id"):
+        raise HTTPException(401, "Authentication required")
+    
+    user_roles = await get_user_roles(request.state.user_id)
+    if "admin" not in user_roles:
+        raise HTTPException(403, "Admin role required")
+
+# Rate limiting layer
+async def rate_limit_user(request: Request):
+    """Apply rate limiting per authenticated user."""
+    if not hasattr(request.state, "user_id"):
+        return  # Skip rate limiting for unauthenticated requests
+    
+    user_id = request.state.user_id
+    current_requests = await get_user_request_count(user_id)
+    
+    if current_requests > 1000:  # 1000 requests per hour
+        raise HTTPException(429, "Rate limit exceeded")
+    
+    await increment_user_request_count(user_id)
+
+# Protected admin endpoint
+@app.get("/admin/users/", dependencies=[
+    Depends(authenticate_user),
+    Depends(require_admin_role),
+    Depends(rate_limit_user)
+])
+async def get_admin_users():
+    """Admin endpoint with full security stack."""
+    return {"users": await get_all_users()}
+```
+
+#### **Audit Logging Pattern**
+```python
+import logging
+from datetime import datetime
+
+audit_logger = logging.getLogger("audit")
+
+async def audit_request(
+    request: Request,
+    x_request_id: str = Header(None),
+    user_agent: str = Header(None)
+):
+    """Log all requests for audit purposes."""
+    
+    # Generate request ID if not provided
+    request_id = x_request_id or str(uuid.uuid4())
+    
+    # Extract user info if available
+    user_id = getattr(request.state, "user_id", "anonymous")
+    
+    # Log request details
+    audit_logger.info({
+        "request_id": request_id,
+        "timestamp": datetime.utcnow().isoformat(),
+        "method": request.method,
+        "path": str(request.url.path),
+        "user_id": user_id,
+        "user_agent": user_agent,
+        "client_ip": request.client.host
+    })
+    
+    # Store request ID for response correlation
+    request.state.request_id = request_id
+
+async def audit_response(request: Request, response: Response):
+    """Log response details for audit trail."""
+    
+    request_id = getattr(request.state, "request_id", "unknown")
+    
+    audit_logger.info({
+        "request_id": request_id,
+        "response_status": response.status_code,
+        "response_time": time.time() - request.state.start_time
+    })
+
+# Audited endpoint
+@app.get("/sensitive-data/", dependencies=[
+    Depends(authenticate_user),
+    Depends(audit_request)
+])
+async def get_sensitive_data(request: Request):
+    """Endpoint with comprehensive audit logging."""
+    request.state.start_time = time.time()
+    
+    data = await get_sensitive_data_from_db()
+    
+    # Audit response will be handled by middleware
+    return {"data": data}
+```
+
+#### **Feature Flags and A/B Testing**
+```python
+async def check_feature_flag(
+    feature_name: str,
+    request: Request,
+    x_user_id: str = Header(None)
+):
+    """Enable/disable features based on flags."""
+    
+    user_id = x_user_id or getattr(request.state, "user_id", None)
+    
+    if not user_id:
+        # Feature disabled for anonymous users
+        if feature_name == "premium_feature":
+            raise HTTPException(403, "Authentication required for this feature")
+        return
+    
+    # Check feature flag status
+    feature_enabled = await get_feature_flag(feature_name, user_id)
+    
+    if not feature_enabled:
+        raise HTTPException(404, "Feature not available")
+    
+    # Store feature info for endpoint use
+    request.state.feature_enabled = True
+
+def require_feature(feature_name: str):
+    """Create feature-specific dependency."""
+    async def feature_dependency(request: Request):
+        await check_feature_flag(feature_name, request)
+    return feature_dependency
+
+# Feature-gated endpoint
+@app.get("/premium/analytics/", dependencies=[
+    Depends(authenticate_user),
+    Depends(require_feature("premium_analytics"))
+])
+async def get_premium_analytics():
+    """Endpoint available only when feature flag is enabled."""
+    return {"analytics": await get_premium_analytics_data()}
+```
+
+### Real-World Security Implementations
+
+#### **OAuth2 Integration**
+```python
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+async def verify_oauth2_token(token: str = Depends(oauth2_scheme)):
+    """Validate OAuth2 token."""
+    credentials_exception = HTTPException(
+        status_code=401,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    
+    user = await get_user_by_username(username)
+    if user is None:
+        raise credentials_exception
+    
+    return user
+
+async def verify_active_user(user: dict = Depends(verify_oauth2_token)):
+    """Ensure user account is active."""
+    if not user.get("is_active"):
+        raise HTTPException(400, "Inactive user")
+
+@app.get("/protected/", dependencies=[Depends(verify_active_user)])
+async def protected_route():
+    """OAuth2 protected endpoint."""
+    return {"message": "Access granted to active user"}
+```
+
+#### **API Versioning with Dependencies**
+```python
+async def require_api_version(request: Request):
+    """Enforce API version requirements."""
+    
+    # Check version from header
+    api_version = request.headers.get("API-Version")
+    
+    if not api_version:
+        raise HTTPException(400, "API-Version header required")
+    
+    try:
+        version_number = float(api_version)
+    except ValueError:
+        raise HTTPException(400, "Invalid API version format")
+    
+    # Check if version is supported
+    if version_number < MIN_SUPPORTED_VERSION:
+        raise HTTPException(400, f"API version {api_version} no longer supported")
+    
+    if version_number > CURRENT_VERSION:
+        raise HTTPException(400, f"API version {api_version} not yet available")
+    
+    # Store version for endpoint logic
+    request.state.api_version = version_number
+
+def require_min_version(min_version: float):
+    """Create version-specific dependency."""
+    async def version_dependency(request: Request):
+        await require_api_version(request)
+        if request.state.api_version < min_version:
+            raise HTTPException(400, f"API version {min_version}+ required")
+    return version_dependency
+
+# Version-controlled endpoint
+@app.get("/v2/features/", dependencies=[
+    Depends(require_min_version(2.0))
+])
+async def get_v2_features():
+    """Endpoint requiring API version 2.0+."""
+    return {"features": ["feature1", "feature2", "advanced_feature"]}
+```
+
+### Testing Decorator Dependencies
+
+#### **Individual Dependency Testing**
+```python
+import pytest
+from fastapi.testclient import TestClient
+
+def test_verify_token_valid():
+    """Test token validation with valid token."""
+    # Create test app with just the dependency
+    test_app = FastAPI()
+    
+    @test_app.get("/test/", dependencies=[Depends(verify_token)])
+    async def test_endpoint():
+        return {"message": "success"}
+    
+    client = TestClient(test_app)
+    response = client.get(
+        "/test/",
+        headers={"X-Token": "fake-super-secret-token"}
+    )
+    
+    assert response.status_code == 200
+    assert response.json() == {"message": "success"}
+
+def test_verify_token_invalid():
+    """Test token validation with invalid token."""
+    test_app = FastAPI()
+    
+    @test_app.get("/test/", dependencies=[Depends(verify_token)])
+    async def test_endpoint():
+        return {"message": "success"}
+    
+    client = TestClient(test_app)
+    response = client.get(
+        "/test/",
+        headers={"X-Token": "wrong-token"}
+    )
+    
+    assert response.status_code == 400
+    assert "X-Token header invalid" in response.json()["detail"]
+
+def test_multiple_dependencies():
+    """Test endpoint with multiple decorator dependencies."""
+    client = TestClient(app)
+    
+    # Test with both valid headers
+    response = client.get(
+        "/items/",
+        headers={
+            "X-Token": "fake-super-secret-token",
+            "X-Key": "fake-super-secret-key"
+        }
+    )
+    assert response.status_code == 200
+    assert response.json() == [{"item": "Foo"}, {"item": "Bar"}]
+    
+    # Test with missing key
+    response = client.get(
+        "/items/",
+        headers={"X-Token": "fake-super-secret-token"}
+    )
+    assert response.status_code == 422  # Missing required header
+    
+    # Test with invalid token
+    response = client.get(
+        "/items/",
+        headers={
+            "X-Token": "wrong-token",
+            "X-Key": "fake-super-secret-key"
+        }
+    )
+    assert response.status_code == 400
+```
+
+#### **Dependency Override Testing**
+```python
+def test_with_dependency_override():
+    """Test using dependency overrides for controlled testing."""
+    
+    # Mock dependencies
+    async def mock_verify_token(x_token: str = Header(...)):
+        # Always pass for testing
+        pass
+    
+    async def mock_verify_key(x_key: str = Header(...)):
+        return "test-key"
+    
+    # Override dependencies
+    app.dependency_overrides[verify_token] = mock_verify_token
+    app.dependency_overrides[verify_key] = mock_verify_key
+    
+    client = TestClient(app)
+    response = client.get("/items/")  # No headers needed
+    
+    assert response.status_code == 200
+    assert response.json() == [{"item": "Foo"}, {"item": "Bar"}]
+    
+    # Clean up
+    app.dependency_overrides = {}
+
+def test_security_integration():
+    """Test complete security workflow."""
+    client = TestClient(app)
+    
+    # Simulate real authentication flow
+    test_scenarios = [
+        {
+            "headers": {
+                "X-Token": "fake-super-secret-token",
+                "X-Key": "fake-super-secret-key"
+            },
+            "expected_status": 200,
+            "description": "Valid authentication"
+        },
+        {
+            "headers": {"X-Token": "fake-super-secret-token"},
+            "expected_status": 422,
+            "description": "Missing API key"
+        },
+        {
+            "headers": {"X-Key": "fake-super-secret-key"},
+            "expected_status": 422,
+            "description": "Missing token"
+        },
+        {
+            "headers": {},
+            "expected_status": 422,
+            "description": "No authentication"
+        }
+    ]
+    
+    for scenario in test_scenarios:
+        response = client.get("/items/", headers=scenario["headers"])
+        assert response.status_code == scenario["expected_status"], \
+               f"Failed: {scenario['description']}"
+```
+
+### Performance and Production Considerations
+
+#### **Dependency Optimization**
+```python
+# Cache expensive validations
+from functools import lru_cache
+import asyncio
+
+@lru_cache(maxsize=1000)
+def validate_token_cached(token: str) -> bool:
+    """Cache token validation results."""
+    # Expensive validation logic here
+    return token == "fake-super-secret-token"
+
+async def optimized_verify_token(x_token: str = Header(...)):
+    """Optimized token validation with caching."""
+    if not validate_token_cached(x_token):
+        raise HTTPException(400, "X-Token header invalid")
+
+# Async validation for database lookups
+async def async_verify_api_key(x_key: str = Header(...)):
+    """Async API key validation with database lookup."""
+    
+    # Use connection pool for better performance
+    async with get_db_connection() as conn:
+        key_info = await conn.fetchrow(
+            "SELECT id, is_active, expires_at FROM api_keys WHERE key_hash = $1",
+            hashlib.sha256(x_key.encode()).hexdigest()
+        )
+    
+    if not key_info or not key_info["is_active"]:
+        raise HTTPException(401, "Invalid API key")
+    
+    if key_info["expires_at"] < datetime.utcnow():
+        raise HTTPException(401, "API key expired")
+    
+    return x_key
+```
+
+#### **Monitoring and Metrics**
+```python
+from prometheus_client import Counter, Histogram
+
+# Metrics
+auth_attempts = Counter("auth_attempts_total", "Total authentication attempts", ["status"])
+auth_duration = Histogram("auth_duration_seconds", "Authentication duration")
+
+async def monitored_verify_token(x_token: str = Header(...)):
+    """Token verification with monitoring."""
+    
+    with auth_duration.time():
+        try:
+            if x_token != "fake-super-secret-token":
+                auth_attempts.labels(status="failed").inc()
+                raise HTTPException(400, "X-Token header invalid")
+            
+            auth_attempts.labels(status="success").inc()
+            
+        except HTTPException:
+            auth_attempts.labels(status="error").inc()
+            raise
+```
+
+### Application-Level Dependencies
+
+#### **Router-Level Dependencies**
+```python
+from fastapi import APIRouter
+
+# Create router with shared dependencies
+admin_router = APIRouter(
+    prefix="/admin",
+    dependencies=[
+        Depends(verify_token),
+        Depends(require_admin_role),
+        Depends(audit_request)
+    ]
+)
+
+# All routes in this router inherit the dependencies
+@admin_router.get("/users/")
+async def get_users():
+    return {"users": await get_all_users()}
+
+@admin_router.get("/settings/")
+async def get_settings():
+    return {"settings": await get_admin_settings()}
+
+# Include router in main app
+app.include_router(admin_router)
+```
+
+#### **Global Dependencies**
+```python
+# Apply dependencies to entire application
+app = FastAPI(dependencies=[
+    Depends(log_requests),
+    Depends(check_maintenance_mode)
+])
+
+async def log_requests(request: Request):
+    """Log all incoming requests."""
+    logger.info(f"{request.method} {request.url.path}")
+
+async def check_maintenance_mode():
+    """Check if application is in maintenance mode."""
+    if MAINTENANCE_MODE:
+        raise HTTPException(503, "Service temporarily unavailable")
+```
+
+### Key Learning Points
+- **Decorator dependencies enable clean endpoint signatures** by separating security from business logic
+- **Dependencies parameter executes validation** without injecting return values into endpoint functions
+- **Multi-layer security** can be implemented through multiple decorator dependencies
+- **Cross-cutting concerns** like logging, monitoring, and auditing are ideal decorator dependency use cases
+- **Performance optimization** includes caching, async operations, and connection pooling
+- **Testing strategies** support both individual dependency testing and integration testing
+- **Router and application-level dependencies** provide shared security and validation across multiple endpoints
+- **Real-world patterns** include OAuth2 integration, API versioning, and feature flags
+- **Monitoring integration** enables security metrics and performance tracking
+- **Flexible architecture** allows dependencies to work as both decorators and regular dependencies
+
+This lesson establishes essential patterns for implementing robust security and cross-cutting concerns in FastAPI applications while maintaining clean, testable code architecture!
