@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastAPI Static Files Demo</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome to FastAPI Static Files! 🚀</h1>
+        <p>This HTML page is being served by FastAPI using StaticFiles.</p>
+        
+        <div class="info-box">
+            <h2>How it works:</h2>
+            <ul>
+                <li>FastAPI mounts the <code>static</code> directory at <code>/static</code></li>
+                <li>All files in the directory are automatically served</li>
+                <li>This HTML file is at <code>static/index.html</code></li>
+                <li>The CSS is loaded from <code>static/styles.css</code></li>
+                <li>JavaScript is loaded from <code>static/script.js</code></li>
+            </ul>
+        </div>
+
+        <div class="demo-section">
+            <h2>Interactive Demo</h2>
+            <button id="testButton">Click me!</button>
+            <p id="output"></p>
+        </div>
+
+        <div class="links">
+            <a href="/docs" target="_blank">View API Docs</a>
+            <a href="/" target="_blank">Back to API Root</a>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
