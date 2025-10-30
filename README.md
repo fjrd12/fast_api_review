@@ -10784,3 +10784,460 @@ This lesson demonstrates:
 - **Debugging Skills**: Identifying and resolving CORS-related issues
 
 CORS middleware is essential for modern web applications, enabling secure cross-origin communication while maintaining browser security protections!
+
+## Lesson 33: SQL Databases with SQLModel
+
+### Overview
+This lesson demonstrates comprehensive database integration using SQLModel, a powerful library that combines SQLAlchemy's database capabilities with Pydantic's data validation. SQLModel provides a unified approach to defining database models and API schemas, enabling type-safe database operations with automatic validation and serialization.
+
+### Key Concepts
+- **SQLModel Integration**: Unified database and API modeling with type safety
+- **Database Session Management**: Connection pooling and session-per-request patterns
+- **Modern FastAPI Patterns**: Lifespan management and dependency injection
+- **CRUD Operations**: Complete Create, Read, Update, Delete with validation
+- **Database Relationships**: Foreign keys and model relationships
+- **Pagination**: Efficient data retrieval with offset/limit patterns
+
+### File: `33SQLDatabaseswithSQLModel.py`
+
+#### SQLModel Foundation
+
+**What is SQLModel?**
+SQLModel is a library created by the same author as FastAPI that combines:
+- **SQLAlchemy**: Mature Python SQL toolkit and Object-Relational Mapping (ORM)
+- **Pydantic**: Data validation and settings management using Python type annotations
+
+**Key Benefits:**
+- **Single Model Definition**: One model serves both database and API schemas
+- **Type Safety**: Full type checking and IDE support throughout the stack
+- **Automatic Validation**: Input validation without additional code
+- **Code Reuse**: Shared models reduce duplication and inconsistencies
+
+#### Model Architecture
+
+**Base Model Pattern:**
+```python
+class HeroBase(SQLModel):
+    name: str = Field(index=True)
+    secret_name: str
+    age: int | None = Field(default=None, index=True)
+```
+
+**Model Inheritance Hierarchy:**
+1. **HeroBase**: Common fields shared across all models
+2. **Hero**: Database table model with auto-generated ID
+3. **HeroPublic**: Safe public API response model
+4. **HeroCreate**: Input validation model for creation
+5. **HeroUpdate**: Partial update model with optional fields
+
+**Database Configuration:**
+```python
+# SQLite database with connection pooling
+sqlite_file_name = "database.db"
+sqlite_url = f"sqlite:///{sqlite_file_name}"
+
+# Connection configuration with pooling
+connect_args = {"check_same_thread": False}
+engine = create_engine(sqlite_url, connect_args=connect_args)
+```
+
+#### Modern FastAPI Patterns
+
+**Lifespan Management:**
+```python
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    create_db_and_tables()
+    yield
+```
+- **Replaces**: Deprecated `@app.on_event("startup")`
+- **Benefits**: Better resource management and async support
+- **Function**: Creates database tables on startup
+
+**Dependency Injection:**
+```python
+SessionDep = Annotated[Session, Depends(get_session)]
+
+def get_session():
+    with Session(engine) as session:
+        yield session
+```
+- **Session Per Request**: Each API call gets its own database session
+- **Automatic Cleanup**: Sessions closed automatically after request
+- **Type Safety**: Full type hints for database operations
+
+#### CRUD Operations Implementation
+
+**1. Create Hero (`POST /heroes/`)**
+```python
+@app.post("/heroes/", response_model=HeroPublic)
+def create_hero(hero: HeroCreate, session: SessionDep):
+    db_hero = Hero.model_validate(hero)
+    session.add(db_hero)
+    session.commit()
+    session.refresh(db_hero)
+    return db_hero
+```
+
+**Features:**
+- **Input Validation**: HeroCreate model validates all input data
+- **Model Conversion**: Safe conversion from input to database model
+- **Database Transaction**: Automatic commit and refresh for new records
+- **Response Filtering**: HeroPublic model ensures safe API responses
+
+**2. Read Heroes (`GET /heroes/`)**
+```python
+@app.get("/heroes/", response_model=list[HeroPublic])
+def read_heroes(
+    session: SessionDep, 
+    offset: int = 0, 
+    limit: Annotated[int, Query(le=100)] = 100
+):
+    heroes = session.exec(select(Hero).offset(offset).limit(limit)).all()
+    return heroes
+```
+
+**Features:**
+- **Pagination**: Configurable offset and limit with validation
+- **Query Building**: SQLModel's `select()` provides type-safe queries
+- **Performance**: LIMIT prevents accidental large data transfers
+- **Validation**: Maximum limit of 100 records prevents abuse
+
+**3. Read Single Hero (`GET /heroes/{hero_id}`)**
+```python
+@app.get("/heroes/{hero_id}", response_model=HeroPublic)
+def read_hero(hero_id: int, session: SessionDep):
+    hero = session.get(Hero, hero_id)
+    if not hero:
+        raise HTTPException(status_code=404, detail="Hero not found")
+    return hero
+```
+
+**Features:**
+- **Primary Key Lookup**: Efficient database retrieval by ID
+- **Error Handling**: 404 response for non-existent records
+- **Type Safety**: Automatic conversion to response model
+
+**4. Update Hero (`PATCH /heroes/{hero_id}`)**
+```python
+@app.patch("/heroes/{hero_id}", response_model=HeroPublic)
+def update_hero(hero_id: int, hero: HeroUpdate, session: SessionDep):
+    hero_db = session.get(Hero, hero_id)
+    if not hero_db:
+        raise HTTPException(status_code=404, detail="Hero not found")
+    
+    hero_data = hero.model_dump(exclude_unset=True)
+    hero_db.sqlmodel_update(hero_data)
+    session.add(hero_db)
+    session.commit()
+    session.refresh(hero_db)
+    return hero_db
+```
+
+**Features:**
+- **Partial Updates**: Only updates provided fields using `exclude_unset=True`
+- **PATCH Semantics**: True partial update behavior
+- **Data Validation**: All updates validated against model constraints
+- **Atomic Operations**: Database transaction ensures data consistency
+
+**5. Delete Hero (`DELETE /heroes/{hero_id}`)**
+```python
+@app.delete("/heroes/{hero_id}")
+def delete_hero(hero_id: int, session: SessionDep):
+    hero_db = session.get(Hero, hero_id)
+    if not hero_db:
+        raise HTTPException(status_code=404, detail="Hero not found")
+    session.delete(hero_db)
+    session.commit()
+    return {"ok": True}
+```
+
+**Features:**
+- **Safe Deletion**: Verification before deletion
+- **Transaction Management**: Automatic commit for data persistence
+- **Confirmation Response**: Clear success indication
+
+### Database Session Management
+
+#### Session Lifecycle
+```python
+def get_session():
+    with Session(engine) as session:
+        yield session
+```
+
+**Benefits:**
+- **Automatic Resource Management**: Sessions automatically closed
+- **Connection Pooling**: Efficient database connection reuse
+- **Thread Safety**: Each request gets its own session
+- **Error Handling**: Automatic rollback on exceptions
+
+#### Transaction Patterns
+```python
+# Successful transaction
+session.add(hero)
+session.commit()        # Persists changes
+session.refresh(hero)   # Reloads with generated ID
+
+# Failed transaction
+try:
+    session.add(hero)
+    session.commit()
+except IntegrityError:
+    session.rollback()  # Automatic with FastAPI
+    raise HTTPException(status_code=400, detail="Constraint violation")
+```
+
+### Data Validation and Type Safety
+
+#### Input Validation
+```python
+class HeroCreate(HeroBase):
+    # Inherits validation from HeroBase
+    # Additional creation-specific validation can be added
+    pass
+
+# Usage in endpoint
+def create_hero(hero: HeroCreate, session: SessionDep):
+    # hero is fully validated before this function executes
+    db_hero = Hero.model_validate(hero)
+```
+
+#### Response Filtering
+```python
+class HeroPublic(HeroBase):
+    id: int
+
+# Automatically excludes any sensitive fields not in HeroBase
+# Ensures consistent API responses regardless of database model changes
+```
+
+### Advanced Patterns and Best Practices
+
+#### 1. **Database Relationships**
+```python
+class Team(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(index=True)
+    headquarters: str
+
+class Hero(HeroBase, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    team_id: int | None = Field(default=None, foreign_key="team.id")
+    
+    # Relationship for easy access
+    team: Team | None = Relationship(back_populates="heroes")
+```
+
+#### 2. **Complex Queries**
+```python
+# Search with filters
+@app.get("/heroes/search")
+def search_heroes(
+    name: str | None = None,
+    min_age: int | None = None,
+    session: SessionDep = Depends(get_session)
+):
+    query = select(Hero)
+    
+    if name:
+        query = query.where(Hero.name.contains(name))
+    if min_age:
+        query = query.where(Hero.age >= min_age)
+    
+    heroes = session.exec(query).all()
+    return heroes
+```
+
+#### 3. **Bulk Operations**
+```python
+@app.post("/heroes/bulk")
+def create_heroes_bulk(heroes: list[HeroCreate], session: SessionDep):
+    db_heroes = [Hero.model_validate(hero) for hero in heroes]
+    session.add_all(db_heroes)
+    session.commit()
+    
+    for hero in db_heroes:
+        session.refresh(hero)
+    
+    return db_heroes
+```
+
+#### 4. **Database Migration Patterns**
+```python
+def create_db_and_tables():
+    # Create tables if they don't exist
+    SQLModel.metadata.create_all(engine)
+    
+    # For production, use Alembic for migrations
+    # alembic revision --autogenerate -m "Add hero table"
+    # alembic upgrade head
+```
+
+### Example Usage
+
+#### 1. **Create Hero**
+```bash
+curl -X POST "http://localhost:8000/heroes/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Spider-Man",
+    "secret_name": "Peter Parker",
+    "age": 25
+  }'
+```
+
+**Response:**
+```json
+{
+  "id": 1,
+  "name": "Spider-Man",
+  "secret_name": "Peter Parker",
+  "age": 25
+}
+```
+
+#### 2. **Get Heroes with Pagination**
+```bash
+curl "http://localhost:8000/heroes/?offset=0&limit=10"
+```
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "name": "Spider-Man",
+    "secret_name": "Peter Parker",
+    "age": 25
+  },
+  {
+    "id": 2,
+    "name": "Iron Man",
+    "secret_name": "Tony Stark",
+    "age": 45
+  }
+]
+```
+
+#### 3. **Update Hero (Partial)**
+```bash
+curl -X PATCH "http://localhost:8000/heroes/1" \
+  -H "Content-Type: application/json" \
+  -d '{"age": 26}'
+```
+
+**Response:**
+```json
+{
+  "id": 1,
+  "name": "Spider-Man",
+  "secret_name": "Peter Parker",
+  "age": 26
+}
+```
+
+#### 4. **Delete Hero**
+```bash
+curl -X DELETE "http://localhost:8000/heroes/1"
+```
+
+**Response:**
+```json
+{
+  "ok": true
+}
+```
+
+### Production Considerations
+
+#### 1. **Database Configuration**
+```python
+# Production database setup
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:pass@localhost/db")
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=20,
+    max_overflow=30,
+    pool_pre_ping=True,
+    echo=False  # Set to True for SQL query logging
+)
+```
+
+#### 2. **Error Handling**
+```python
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(request: Request, exc: IntegrityError):
+    return JSONResponse(
+        status_code=400,
+        content={"detail": "Database constraint violation"}
+    )
+```
+
+#### 3. **Security Enhancements**
+```python
+# Rate limiting for database operations
+from slowapi import Limiter
+
+limiter = Limiter(key_func=get_remote_address)
+
+@app.post("/heroes/")
+@limiter.limit("10/minute")
+def create_hero(request: Request, hero: HeroCreate, session: SessionDep):
+    # Implementation with rate limiting
+    pass
+```
+
+#### 4. **Monitoring and Logging**
+```python
+import time
+
+@app.middleware("http")
+async def db_session_middleware(request: Request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    process_time = time.time() - start_time
+    
+    if process_time > 1.0:  # Log slow queries
+        logger.warning(f"Slow database operation: {process_time:.2f}s")
+    
+    return response
+```
+
+### Key Benefits
+
+#### 1. **Developer Experience**
+- **Single Source of Truth**: One model definition for database and API
+- **Type Safety**: Full IDE support with autocomplete and error detection
+- **Automatic Validation**: Input validation without additional code
+- **Clear Separation**: Distinct models for different use cases
+
+#### 2. **Performance**
+- **Connection Pooling**: Efficient database connection management
+- **Lazy Loading**: Relationships loaded only when needed
+- **Query Optimization**: SQLAlchemy's mature query optimization
+- **Pagination**: Built-in support for efficient large dataset handling
+
+#### 3. **Security**
+- **SQL Injection Prevention**: Parameterized queries by default
+- **Data Validation**: All inputs validated against schema
+- **Response Filtering**: Sensitive data automatically excluded
+- **Type Checking**: Compile-time error detection
+
+#### 4. **Scalability**
+- **Database Agnostic**: Works with PostgreSQL, MySQL, SQLite
+- **Migration Support**: Alembic integration for schema changes
+- **Relationship Management**: Efficient handling of complex data relationships
+- **Bulk Operations**: Support for high-throughput operations
+
+### Learning Outcomes
+
+This lesson demonstrates:
+- **Modern Database Integration**: SQLModel's unified approach to database and API modeling
+- **Production Patterns**: Session management, dependency injection, and lifespan handling
+- **CRUD Implementation**: Complete create, read, update, delete operations with validation
+- **Type Safety**: End-to-end type checking from database to API responses
+- **Performance Optimization**: Pagination, connection pooling, and efficient query patterns
+- **Security Best Practices**: Input validation, response filtering, and SQL injection prevention
+
+SQLModel represents the state-of-the-art approach to building type-safe, high-performance database-driven APIs with FastAPI, combining the best of SQLAlchemy's database capabilities with Pydantic's validation features!
