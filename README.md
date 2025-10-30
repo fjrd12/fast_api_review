@@ -9463,3 +9463,742 @@ async def add_security_headers(request, call_next):
 - **Foundation for advanced patterns** like user management, roles, and OAuth2 scopes
 
 This lesson establishes the essential foundation for API security in FastAPI, providing the building blocks for comprehensive authentication and authorization systems in production applications!
+
+## Lesson 30: Complete JWT Authentication System
+
+### Overview
+This lesson demonstrates a complete, production-ready JWT authentication system combining all security concepts learned in previous lessons. It implements secure password hashing with bcrypt, JWT token generation and validation, and comprehensive user management with proper error handling.
+
+### Key Features
+- **Complete Authentication Flow**: Login endpoint that validates credentials and returns JWT tokens
+- **Secure Password Handling**: bcrypt hashing with salt for password storage and verification
+- **JWT Token Management**: Token creation, validation, and expiration handling
+- **Protected Endpoints**: User profile and resource access with proper authorization
+- **Production Security**: Comprehensive error handling and security best practices
+
+### File: `30securityoauthjwt.py`
+
+#### Components Overview
+
+**Security Configuration**:
+```python
+# JWT Configuration
+SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+# OAuth2 scheme for token extraction
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+```
+
+**Password Security**:
+```python
+# bcrypt context for secure password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def verify_password(plain_password, hashed_password):
+    """Verify plain password against bcrypt hash"""
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    """Generate bcrypt hash for password storage"""
+    return pwd_context.hash(password)
+```
+
+**Data Models**:
+```python
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: str | None = None
+
+class User(BaseModel):
+    username: str
+    email: str | None = None
+    full_name: str | None = None
+    disabled: bool | None = None
+
+class UserInDB(User):
+    hashed_password: str
+```
+
+### Authentication Flow
+
+#### 1. User Database Setup
+```python
+fake_users_db = {
+    "johndoe": {
+        "username": "johndoe",
+        "full_name": "John Doe",
+        "email": "johndoe@example.com",
+        "hashed_password": "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
+        "disabled": False,
+    }
+}
+```
+
+#### 2. User Authentication Functions
+```python
+def get_user(db, username: str):
+    """Retrieve user from database by username"""
+    user = db.get(username)
+    if user:
+        return UserInDB(**user)
+    return None
+
+def authenticate_user(fake_db, username: str, password: str):
+    """Authenticate user credentials with bcrypt verification"""
+    user = get_user(fake_db, username)
+    if user and verify_password(password, user.hashed_password):
+        return user
+    return False
+```
+
+#### 3. JWT Token Management
+```python
+def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None):
+    """Generate JWT token with expiration"""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+```
+
+#### 4. Authentication Dependencies
+```python
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    """Extract and validate user from JWT token"""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if username is None:
+            raise HTTPException(401, "Invalid authentication credentials")
+        token_data = TokenData(username=username)
+    except InvalidTokenError:
+        raise HTTPException(401, "Invalid authentication credentials")
+    
+    user = get_user(fake_users_db, username=token_data.username)
+    if user is None:
+        raise HTTPException(401, "Invalid authentication credentials")
+    return user
+
+async def get_current_active_user(current_user: UserInDB = Depends(get_current_user)):
+    """Ensure user account is active and not disabled"""
+    if current_user.disabled:
+        raise HTTPException(400, "Inactive user")
+    return current_user
+```
+
+### API Endpoints
+
+#### 1. Login Endpoint (`/token`)
+```python
+@app.post("/token")
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    """Authenticate user and return JWT token"""
+    user = authenticate_user(fake_users_db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(401, "Invalid credentials")
+    access_token = create_access_token(data={"sub": user.username})
+    return {"access_token": access_token, "token_type": "bearer"}
+```
+
+#### 2. User Profile Endpoint (`/users/me/`)
+```python
+@app.get("/users/me/")
+async def read_users_me(current_user: UserInDB = Depends(get_current_active_user)):
+    """Get current authenticated user's profile"""
+    return current_user
+```
+
+#### 3. User Items Endpoint (`/users/me/items/`)
+```python
+@app.get("/users/me/items/")
+async def read_own_items(current_user: UserInDB = Depends(get_current_active_user)):
+    """Get current user's personal items"""
+    return [{"item_id": "Foo", "owner": current_user.username}]
+```
+
+### Testing the Authentication System
+
+#### 1. Start the Server
+```bash
+fastapi dev 30securityoauthjwt.py
+```
+
+#### 2. Test Authentication Flow
+```bash
+# Login to get token
+curl -X POST "http://localhost:8000/token" \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -d "username=johndoe&password=secret"
+
+# Response:
+# {"access_token":"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...","token_type":"bearer"}
+
+# Use token to access protected endpoints
+TOKEN="your_token_here"
+
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/users/me/"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/users/me/items/"
+```
+
+#### 3. Test Credentials
+- **Username**: `johndoe`
+- **Password**: `secret`
+- **Alternative User**: `alice` / `secret2`
+
+### Security Features
+
+#### bcrypt Password Security
+- **Salt-based hashing** prevents rainbow table attacks
+- **Configurable work factor** for future-proofing against hardware improvements
+- **Constant-time verification** prevents timing attacks
+- **Industry-standard security** used by major platforms
+
+#### JWT Token Security
+- **Cryptographic signatures** prevent token tampering
+- **Expiration timestamps** limit token validity window
+- **Algorithm specification** prevents "None" algorithm attacks
+- **Secret key protection** ensures only server can create valid tokens
+
+#### Production Security Considerations
+```python
+# Environment-based configuration
+SECRET_KEY = os.getenv("SECRET_KEY")
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Rate limiting implementation
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    # Implement rate limiting logic
+    pass
+
+# CORS configuration for web applications
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://yourdomain.com"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+```
+
+### Error Handling
+
+The system provides comprehensive error handling:
+
+- **401 Unauthorized**: Invalid or expired tokens
+- **400 Bad Request**: Disabled user accounts
+- **422 Unprocessable Entity**: Invalid request format
+- **Consistent error responses** prevent information leakage
+
+### Interactive Documentation
+
+Visit `http://localhost:8000/docs` to see:
+- **Authorize button** for JWT token input
+- **Token authentication** for protected endpoints
+- **Complete API documentation** with security schemes
+- **Interactive testing** of authentication flow
+
+### Production Enhancements
+
+For production deployment, consider:
+
+#### Database Integration
+```python
+# SQLAlchemy database integration
+def get_user(db: Session, username: str) -> Optional[UserInDB]:
+    db_user = db.query(UserModel).filter(UserModel.username == username).first()
+    if db_user:
+        return UserInDB.from_orm(db_user)
+    return None
+```
+
+#### Advanced Security Features
+- **Refresh token rotation** for extended sessions
+- **Token blacklisting** for immediate revocation
+- **Multi-factor authentication** integration
+- **Role-based permissions** with scopes
+- **Account lockout** after failed attempts
+
+#### Monitoring and Logging
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Log authentication events
+logger.info(f"Successful login for {user.username}")
+logger.warning(f"Failed login attempt for {username}")
+```
+
+### Key Benefits
+
+- **Complete Authentication System**: Production-ready JWT implementation
+- **Secure Password Management**: Industry-standard bcrypt hashing
+- **Flexible Architecture**: Easy to extend with additional features
+- **Standards Compliance**: OAuth2 and JWT best practices
+- **Developer Experience**: Clear error messages and documentation
+- **Scalable Design**: Ready for database integration and horizontal scaling
+
+### Learning Outcomes
+
+This lesson demonstrates:
+- **Complete authentication workflows** from login to resource access
+- **Production security practices** including password hashing and token management
+- **Dependency injection patterns** for clean, testable code
+- **Error handling strategies** for security-sensitive applications
+- **API design principles** for authentication systems
+
+This comprehensive JWT authentication system provides a solid foundation for building secure FastAPI applications with proper user management, token-based authentication, and production-ready security features!
+
+## Lesson 31: Middleware Basics
+
+### Overview
+This lesson introduces the fundamentals of middleware in FastAPI applications. Middleware functions as a processing layer that sits between incoming HTTP requests and outgoing responses, enabling cross-cutting concerns like performance monitoring, logging, authentication, and request/response modification.
+
+### Key Concepts
+- **HTTP Middleware Pattern**: Functions that process requests before they reach endpoints
+- **Request/Response Lifecycle**: Understanding the complete flow of HTTP processing
+- **Performance Monitoring**: Measuring and reporting request processing times
+- **Custom Header Injection**: Adding metadata to responses for monitoring and debugging
+- **Asynchronous Processing**: Non-blocking middleware implementation patterns
+
+### File: `31MiddleareBasics.py`
+
+#### Middleware Implementation
+
+**Performance Timing Middleware**:
+```python
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    """Measure and report request processing time"""
+    start_time = time.perf_counter()
+    response = await call_next(request)
+    process_time = time.perf_counter() - start_time
+    response.headers["X-Process-Time"] = str(process_time)
+    return response
+```
+
+**Data Model for Testing**:
+```python
+class Item(BaseModel):
+    name: str
+    description: str = None
+```
+
+### Middleware Processing Flow
+
+#### 1. Request Interception
+```
+Client Request → Middleware → Endpoint → Response Processing → Client Response
+     ↓              ↓           ↓            ↓                    ↓
+  HTTP Request   Start Timer  Process     Add Headers        Final Response
+  Arrives        Record       Business    Calculate Time     with Timing
+                 Timestamp    Logic       Add to Headers     Information
+```
+
+#### 2. Timing Measurement
+- **High-Precision Timing**: Uses `time.perf_counter()` for nanosecond accuracy
+- **Complete Request Cycle**: Measures from request arrival to response completion
+- **Includes All Processing**: Endpoint logic, data operations, response generation
+- **Custom Header Addition**: Adds `X-Process-Time` header with timing information
+
+#### 3. Response Enhancement
+```python
+# Response headers include timing information
+{
+    "X-Process-Time": "0.002341",  # Time in seconds
+    "Content-Type": "application/json",
+    "Content-Length": "123"
+}
+```
+
+### API Endpoints
+
+#### 1. Root Health Check (`/`)
+```python
+@app.get("/")
+async def read_root():
+    """Basic health check endpoint for testing middleware"""
+    return {"message": "Hello World"}
+```
+
+**Timing Characteristics**:
+- Extremely fast execution (microseconds)
+- Minimal processing overhead
+- Baseline for performance comparison
+- Ideal for middleware testing
+
+#### 2. Item Retrieval (`/items/{item_id}`)
+```python
+@app.get("/items/{item_id}")
+async def read_item(item_id: str):
+    """Retrieve item with path parameter processing"""
+    if item_id in items:
+        return items[item_id]
+    return {"error": "Item not found"}
+```
+
+**Processing Analysis**:
+- Path parameter extraction and validation
+- Dictionary lookup operations (O(1) complexity)
+- Conditional response logic
+- Error handling without exceptions
+
+#### 3. Item Creation (`/items/`)
+```python
+@app.post("/items/")
+async def create_item(item: Item):
+    """Create new item with request body validation"""
+    items[item.name] = item.model_dump()
+    return item
+```
+
+**Complex Processing Steps**:
+- HTTP request body parsing
+- Pydantic model validation
+- Data transformation and storage
+- Response serialization
+
+### Testing Middleware Functionality
+
+#### 1. Start the Server
+```bash
+fastapi dev 31MiddleareBasics.py
+```
+
+#### 2. Test Different Endpoints
+```bash
+# Test simple endpoint (fast timing)
+curl -v http://localhost:8000/
+# Expected: X-Process-Time: ~0.0001-0.001 seconds
+
+# Test item retrieval (moderate timing)
+curl -v http://localhost:8000/items/foo
+# Expected: X-Process-Time: ~0.001-0.005 seconds
+
+# Test item creation (slower timing due to validation)
+curl -v -X POST "http://localhost:8000/items/" \
+     -H "Content-Type: application/json" \
+     -d '{"name": "laptop", "description": "Development machine"}'
+# Expected: X-Process-Time: ~0.005-0.015 seconds
+```
+
+#### 3. Monitor Timing Headers
+```bash
+# Extract just the timing information
+curl -s -D - http://localhost:8000/ | grep X-Process-Time
+# Output: X-Process-Time: 0.000123
+
+# Test multiple requests to see timing variation
+for i in {1..5}; do
+    curl -s -D - http://localhost:8000/ | grep X-Process-Time
+done
+```
+
+### Middleware Use Cases
+
+#### 1. Performance Monitoring
+```python
+# Enhanced timing middleware with logging
+@app.middleware("http")
+async def performance_monitoring(request: Request, call_next):
+    start_time = time.perf_counter()
+    
+    response = await call_next(request)
+    
+    process_time = time.perf_counter() - start_time
+    
+    # Log slow requests
+    if process_time > 0.1:  # 100ms threshold
+        logger.warning(f"Slow request: {request.url} took {process_time:.3f}s")
+    
+    response.headers["X-Process-Time"] = str(process_time)
+    return response
+```
+
+#### 2. Request Logging
+```python
+@app.middleware("http")
+async def request_logging(request: Request, call_next):
+    # Log incoming request
+    logger.info(f"Request: {request.method} {request.url}")
+    
+    response = await call_next(request)
+    
+    # Log response status
+    logger.info(f"Response: {response.status_code}")
+    
+    return response
+```
+
+#### 3. Security Headers
+```python
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    
+    # Add security headers
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    
+    return response
+```
+
+### Production Middleware Patterns
+
+#### 1. Correlation ID Tracking
+```python
+import uuid
+
+@app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next):
+    # Generate unique request ID
+    correlation_id = str(uuid.uuid4())
+    request.state.correlation_id = correlation_id
+    
+    response = await call_next(request)
+    
+    # Add correlation ID to response
+    response.headers["X-Correlation-ID"] = correlation_id
+    
+    return response
+```
+
+#### 2. Error Handling and Recovery
+```python
+@app.middleware("http")
+async def error_handling_middleware(request: Request, call_next):
+    try:
+        start_time = time.perf_counter()
+        response = await call_next(request)
+        process_time = time.perf_counter() - start_time
+        
+        response.headers["X-Process-Time"] = str(process_time)
+        return response
+        
+    except Exception as e:
+        # Log error with timing
+        process_time = time.perf_counter() - start_time
+        logger.error(f"Request failed after {process_time:.3f}s: {str(e)}")
+        
+        # Return error response
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Internal server error"},
+            headers={"X-Process-Time": str(process_time)}
+        )
+```
+
+#### 3. Rate Limiting
+```python
+from collections import defaultdict
+import time
+
+# Simple in-memory rate limiter
+request_counts = defaultdict(list)
+
+@app.middleware("http")
+async def rate_limiting_middleware(request: Request, call_next):
+    client_ip = request.client.host
+    current_time = time.time()
+    
+    # Clean old requests (older than 1 minute)
+    request_counts[client_ip] = [
+        req_time for req_time in request_counts[client_ip]
+        if current_time - req_time < 60
+    ]
+    
+    # Check rate limit (100 requests per minute)
+    if len(request_counts[client_ip]) >= 100:
+        return JSONResponse(
+            status_code=429,
+            content={"error": "Rate limit exceeded"}
+        )
+    
+    # Record current request
+    request_counts[client_ip].append(current_time)
+    
+    return await call_next(request)
+```
+
+### Client-Side Integration
+
+#### 1. JavaScript Performance Monitoring
+```javascript
+// Monitor API performance in web applications
+async function monitoredFetch(url, options = {}) {
+    const response = await fetch(url, options);
+    
+    const processTime = parseFloat(response.headers.get('X-Process-Time'));
+    
+    // Log slow requests
+    if (processTime > 0.1) {
+        console.warn(`Slow API call: ${url} took ${processTime * 1000}ms`);
+    }
+    
+    // Track performance metrics
+    if (window.analytics) {
+        window.analytics.track('api_performance', {
+            url,
+            processTime,
+            status: response.status
+        });
+    }
+    
+    return response;
+}
+```
+
+#### 2. Python Client with Timing Analysis
+```python
+import requests
+import statistics
+
+def analyze_api_performance(url, num_requests=10):
+    """Analyze API performance using middleware timing headers"""
+    times = []
+    
+    for i in range(num_requests):
+        response = requests.get(url)
+        process_time = float(response.headers.get('X-Process-Time', 0))
+        times.append(process_time)
+    
+    return {
+        'average': statistics.mean(times),
+        'median': statistics.median(times),
+        'min': min(times),
+        'max': max(times),
+        'std_dev': statistics.stdev(times)
+    }
+
+# Example usage
+stats = analyze_api_performance('http://localhost:8000/')
+print(f"Average response time: {stats['average']:.4f}s")
+```
+
+### Monitoring and Observability
+
+#### 1. Metrics Collection
+```python
+from prometheus_client import Counter, Histogram
+
+# Metrics
+REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP requests', ['method', 'endpoint'])
+REQUEST_DURATION = Histogram('http_request_duration_seconds', 'HTTP request duration')
+
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    start_time = time.perf_counter()
+    
+    response = await call_next(request)
+    
+    duration = time.perf_counter() - start_time
+    
+    # Record metrics
+    REQUEST_COUNT.labels(method=request.method, endpoint=request.url.path).inc()
+    REQUEST_DURATION.observe(duration)
+    
+    response.headers["X-Process-Time"] = str(duration)
+    return response
+```
+
+#### 2. Health Check Integration
+```python
+@app.middleware("http")
+async def health_check_middleware(request: Request, call_next):
+    # Quick health check bypass
+    if request.url.path == "/health":
+        return JSONResponse({"status": "healthy"})
+    
+    response = await call_next(request)
+    return response
+```
+
+### Testing Strategies
+
+#### 1. Unit Testing Middleware
+```python
+import pytest
+from fastapi.testclient import TestClient
+
+def test_timing_header_added():
+    """Test that timing header is added to responses"""
+    client = TestClient(app)
+    response = client.get("/")
+    
+    assert "X-Process-Time" in response.headers
+    assert float(response.headers["X-Process-Time"]) > 0
+
+def test_timing_varies_by_endpoint():
+    """Test that different endpoints have different timing"""
+    client = TestClient(app)
+    
+    # Simple endpoint
+    simple_response = client.get("/")
+    simple_time = float(simple_response.headers["X-Process-Time"])
+    
+    # Complex endpoint
+    complex_response = client.post("/items/", json={"name": "test"})
+    complex_time = float(complex_response.headers["X-Process-Time"])
+    
+    # Complex operations typically take longer
+    assert complex_time >= simple_time
+```
+
+#### 2. Performance Testing
+```python
+def test_middleware_overhead():
+    """Ensure middleware doesn't add significant overhead"""
+    client = TestClient(app)
+    
+    times = []
+    for _ in range(100):
+        response = client.get("/")
+        times.append(float(response.headers["X-Process-Time"]))
+    
+    average_time = sum(times) / len(times)
+    
+    # Ensure middleware overhead is minimal
+    assert average_time < 0.01  # Less than 10ms average
+```
+
+### Key Benefits
+
+#### 1. Cross-Cutting Concerns
+- **Unified Processing**: Apply common logic to all requests
+- **Separation of Concerns**: Keep business logic clean
+- **Reusable Components**: Share middleware across applications
+- **Consistent Behavior**: Ensure uniform handling of requests
+
+#### 2. Observability and Monitoring
+- **Performance Insights**: Real-time timing data for all endpoints
+- **Request Tracking**: Complete request lifecycle visibility
+- **Error Detection**: Identify slow or failing requests
+- **Capacity Planning**: Data-driven scaling decisions
+
+#### 3. Development Experience
+- **Easy Implementation**: Simple decorator-based pattern
+- **Flexible Architecture**: Stack multiple middleware functions
+- **Testing Support**: Isolate and test middleware logic
+- **Production Ready**: Scalable patterns for enterprise use
+
+### Learning Outcomes
+
+This lesson demonstrates:
+- **Middleware Architecture**: Understanding request/response processing layers
+- **Performance Monitoring**: Implementing timing measurements and reporting
+- **Cross-Cutting Concerns**: Applying common functionality across endpoints
+- **Production Patterns**: Building scalable middleware for real applications
+- **Testing Strategies**: Validating middleware behavior and performance
+
+Middleware provides a powerful foundation for building robust, observable, and maintainable FastAPI applications with consistent cross-cutting functionality!
