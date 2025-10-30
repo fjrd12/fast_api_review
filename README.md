@@ -11241,3 +11241,482 @@ This lesson demonstrates:
 - **Security Best Practices**: Input validation, response filtering, and SQL injection prevention
 
 SQLModel represents the state-of-the-art approach to building type-safe, high-performance database-driven APIs with FastAPI, combining the best of SQLAlchemy's database capabilities with Pydantic's validation features!
+
+## Lesson 34: Bigger Applications - Modular FastAPI Architecture
+
+### Overview
+This lesson demonstrates how to structure larger FastAPI applications using modular design patterns. It showcases the organization of a complex application into manageable modules with proper separation of concerns, dependency injection, and security layers. The `./app` folder contains a complete example of a scalable FastAPI application architecture.
+
+### Key Concepts
+- **Modular Router Design**: Organizing endpoints into feature-specific router modules
+- **Package Structure**: Logical organization of code into packages and subpackages  
+- **Dependency Injection**: Multi-layer authentication and security patterns
+- **Internal Organization**: Separating public and internal/administrative functionality
+- **Scalable Architecture**: Patterns that support team development and application growth
+
+### File Structure
+```
+app/
+├── main_app.py           # Main application entry point and configuration
+├── dependencies.py       # Shared dependency injection functions
+├── routers/             # Feature-specific route handlers
+│   ├── __init__.py
+│   ├── items.py         # Item management endpoints
+│   └── users.py         # User management endpoints
+└── internal/            # Internal/administrative functionality
+    ├── __init__.py
+    └── admin.py         # Administrative endpoints
+```
+
+### Architecture Patterns
+
+#### **1. Application Factory Pattern**
+The main application uses a factory pattern for flexible configuration and testing:
+
+```python
+def create_application() -> FastAPI:
+    """Create and configure the main FastAPI application"""
+    app = FastAPI(
+        title="FastAPI Bigger Applications",
+        description="Demonstration of modular FastAPI application architecture",
+        version="1.0.0",
+        dependencies=[Depends(get_query_token)]  # Global authentication
+    )
+    return app
+
+app = create_application()
+```
+
+#### **2. Router Configuration Pattern**
+Centralized router management with specific configurations:
+
+```python
+def configure_routers(app: FastAPI) -> None:
+    """Configure and include all application routers"""
+    # Users router - basic configuration
+    app.include_router(users.router)
+    
+    # Items router - with token header authentication
+    app.include_router(items.router)
+    
+    # Admin router - enhanced security and custom configuration
+    app.include_router(
+        admin.router,
+        prefix="/admin",
+        tags=["admin"],
+        dependencies=[Depends(get_token_header)],
+        responses={418: {"description": "I'm a teapot"}}
+    )
+```
+
+### Security Architecture
+
+#### **Multi-Layer Authentication System**
+
+**Layer 1: Global Authentication**
+```python
+# Applied to entire application
+app = FastAPI(dependencies=[Depends(get_query_token)])
+
+async def get_query_token(token: str):
+    """Global query parameter authentication (token=jessica)"""
+    if token != "jessica":
+        raise HTTPException(400, "No Jessica token provided")
+```
+
+**Layer 2: Router-Specific Authentication**  
+```python
+# Applied to specific router groups
+router = APIRouter(
+    prefix="/items",
+    dependencies=[Depends(get_token_header)]
+)
+
+async def get_token_header(x_token: str = Header()):
+    """Header-based authentication (X-Token: fake-super-secret-token)"""
+    if x_token != "fake-super-secret-token":
+        raise HTTPException(400, "X-Token header invalid")
+```
+
+**Layer 3: Administrative Security**
+```python
+# Enhanced security for admin operations
+app.include_router(
+    admin.router,
+    prefix="/admin",
+    dependencies=[Depends(get_token_header)],  # Additional security layer
+    responses={418: {"description": "I'm a teapot"}}
+)
+```
+
+### Module Organization
+
+#### **1. Users Router (`routers/users.py`)**
+**Purpose**: User management and profile operations
+**Security**: Global authentication only
+**Endpoints**:
+- `GET /users/` - List all users
+- `GET /users/me` - Current user profile  
+- `GET /users/{username}` - Specific user profile
+
+**Configuration**:
+```python
+router = APIRouter()  # Minimal configuration
+
+@router.get("/users/", tags=["users"])
+async def read_users():
+    return [{"username": "Rick"}, {"username": "Morty"}]
+```
+
+#### **2. Items Router (`routers/items.py`)**
+**Purpose**: Item management with enhanced security
+**Security**: Global + header token authentication
+**Endpoints**:
+- `GET /items/` - List all items
+- `GET /items/{item_id}` - Specific item details
+- `PUT /items/{item_id}` - Update item (restricted)
+
+**Configuration**:
+```python
+router = APIRouter(
+    prefix="/items",
+    tags=["items"], 
+    dependencies=[Depends(get_token_header)],
+    responses={404: {"description": "Not found"}}
+)
+```
+
+#### **3. Admin Router (`internal/admin.py`)**
+**Purpose**: Administrative operations
+**Security**: Global + header token + admin prefix
+**Location**: Internal package for organizational security
+**Endpoints**:
+- `POST /admin/` - Administrative operations
+
+**Configuration**:
+```python
+# Simple router, configuration handled by main app
+router = APIRouter()
+
+@router.post("/")
+async def update_admin():
+    return {"message": "Admin getting schwifty"}
+```
+
+### Dependency Injection Patterns
+
+#### **Shared Dependencies (`dependencies.py`)**
+
+**Global Query Token Validation**:
+```python
+async def get_query_token(token: str):
+    """Basic application access control"""
+    if token != "jessica":
+        raise HTTPException(400, "No Jessica token provided")
+```
+
+**Header Token Validation**:
+```python  
+async def get_token_header(x_token: str = Header()):
+    """Enhanced security for sensitive operations"""
+    if x_token != "fake-super-secret-token":
+        raise HTTPException(400, "X-Token header invalid")
+```
+
+#### **Usage Patterns**:
+
+**Global Application Security**:
+```python
+# Applied to entire application
+app = FastAPI(dependencies=[Depends(get_query_token)])
+```
+
+**Router-Level Security**:
+```python
+# Applied to specific router groups
+router = APIRouter(dependencies=[Depends(get_token_header)])
+```
+
+**Endpoint-Specific Security**:
+```python
+# Applied to individual endpoints
+@router.get("/protected")
+async def protected_endpoint(token: str = Depends(get_token_header)):
+    return {"message": "Protected data"}
+```
+
+### API Endpoint Examples
+
+#### **Basic User Operations**
+```bash
+# List users (global auth only)
+curl "http://localhost:8000/users/?token=jessica"
+
+# Get current user
+curl "http://localhost:8000/users/me?token=jessica"
+
+# Get specific user
+curl "http://localhost:8000/users/Rick?token=jessica"
+```
+
+#### **Item Operations (Enhanced Security)**
+```bash
+# List items (global + header auth)
+curl -H "X-Token: fake-super-secret-token" \
+     "http://localhost:8000/items/?token=jessica"
+
+# Get specific item
+curl -H "X-Token: fake-super-secret-token" \
+     "http://localhost:8000/items/gun?token=jessica"
+
+# Update item (restricted to plumbus only)
+curl -X PUT \
+     -H "X-Token: fake-super-secret-token" \
+     "http://localhost:8000/items/plumbus?token=jessica"
+```
+
+#### **Administrative Operations**
+```bash
+# Admin operation (global + header + admin prefix)
+curl -X POST \
+     -H "X-Token: fake-super-secret-token" \
+     "http://localhost:8000/admin/?token=jessica"
+```
+
+### Running the Application
+
+#### **Development Server**
+```bash
+# Navigate to the project root
+cd /home/francisco/Documentos/FastAPI_handson
+
+# Run the modular application
+fastapi dev app/main_app.py
+```
+
+#### **Application Structure Verification**
+```bash
+# Check root endpoint
+curl "http://localhost:8000/?token=jessica"
+
+# Check users endpoints
+curl "http://localhost:8000/users/?token=jessica"
+
+# Check items endpoints (requires header)
+curl -H "X-Token: fake-super-secret-token" \
+     "http://localhost:8000/items/?token=jessica"
+
+# Check admin endpoints (requires header + prefix)
+curl -X POST \
+     -H "X-Token: fake-super-secret-token" \
+     "http://localhost:8000/admin/?token=jessica"
+```
+
+### Advanced Patterns and Production Considerations
+
+#### **1. Database Integration**
+```python
+# Enhanced dependency injection with database
+from sqlalchemy.orm import Session
+
+def get_database():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@router.get("/users/")
+async def read_users(
+    db: Session = Depends(get_database),
+    current_user: User = Depends(get_current_user)
+):
+    users = db.query(User).all()
+    return users
+```
+
+#### **2. Environment-Based Configuration**
+```python
+import os
+from functools import lru_cache
+
+@lru_cache()
+def get_settings():
+    return Settings(
+        database_url=os.getenv("DATABASE_URL", "sqlite:///./app.db"),
+        secret_key=os.getenv("SECRET_KEY", "dev-secret"),
+        admin_token=os.getenv("ADMIN_TOKEN", "fake-super-secret-token")
+    )
+
+async def get_token_header(
+    x_token: str = Header(),
+    settings: Settings = Depends(get_settings)
+):
+    if x_token != settings.admin_token:
+        raise HTTPException(400, "X-Token header invalid")
+```
+
+#### **3. Role-Based Access Control**
+```python
+from enum import Enum
+
+class UserRole(Enum):
+    USER = "user"
+    ADMIN = "admin"
+    MODERATOR = "moderator"
+
+async def get_current_user(token: str = Depends(get_auth_token)) -> User:
+    # Validate token and return user
+    pass
+
+async def require_admin(current_user: User = Depends(get_current_user)):
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(403, "Admin access required")
+    return current_user
+
+@router.post("/admin/users")
+async def create_user(
+    user_data: UserCreate,
+    admin: User = Depends(require_admin)
+):
+    # Only admins can create users
+    pass
+```
+
+#### **4. API Versioning**
+```python
+# Version-specific routers
+v1_router = APIRouter(prefix="/v1")
+v2_router = APIRouter(prefix="/v2")
+
+# Include versioned routers
+app.include_router(v1_router)
+app.include_router(v2_router)
+
+# Version-specific implementations
+@v1_router.get("/users/")
+async def read_users_v1():
+    return legacy_user_format()
+
+@v2_router.get("/users/")
+async def read_users_v2():
+    return enhanced_user_format()
+```
+
+#### **5. Middleware Integration**
+```python
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
+def configure_middleware(app: FastAPI):
+    """Configure application middleware"""
+    
+    # CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    # Trusted host middleware
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=["localhost", "*.example.com"]
+    )
+
+# Apply middleware configuration
+configure_middleware(app)
+```
+
+### Testing Strategy
+
+#### **1. Router Testing**
+```python
+from fastapi.testclient import TestClient
+from app.main_app import app
+
+client = TestClient(app)
+
+def test_users_endpoint():
+    response = client.get("/users/?token=jessica")
+    assert response.status_code == 200
+    assert response.json() == [{"username": "Rick"}, {"username": "Morty"}]
+
+def test_items_endpoint_requires_header():
+    # Without header token
+    response = client.get("/items/?token=jessica")
+    assert response.status_code == 422
+    
+    # With header token
+    response = client.get(
+        "/items/?token=jessica",
+        headers={"X-Token": "fake-super-secret-token"}
+    )
+    assert response.status_code == 200
+```
+
+#### **2. Dependency Testing**
+```python
+from app.dependencies import get_query_token, get_token_header
+
+def test_query_token_validation():
+    # Valid token
+    result = await get_query_token("jessica")
+    assert result is None  # No exception raised
+    
+    # Invalid token
+    with pytest.raises(HTTPException) as exc_info:
+        await get_query_token("invalid")
+    assert exc_info.value.status_code == 400
+```
+
+#### **3. Integration Testing**
+```python
+def test_admin_endpoint_full_auth():
+    response = client.post(
+        "/admin/?token=jessica",
+        headers={"X-Token": "fake-super-secret-token"}
+    )
+    assert response.status_code == 200
+    assert response.json() == {"message": "Admin getting schwifty"}
+```
+
+### Scalability and Maintenance Benefits
+
+#### **1. Team Development**
+- **Module Ownership**: Different teams can own different router modules
+- **Parallel Development**: Teams can work independently on separate features
+- **Code Isolation**: Changes in one module don't affect others
+- **Testing Isolation**: Modules can be tested independently
+
+#### **2. Feature Organization**
+- **Logical Grouping**: Related functionality grouped in dedicated modules
+- **Clear Boundaries**: Well-defined interfaces between modules
+- **Extensible Design**: Easy to add new features without affecting existing code
+- **Maintenance Efficiency**: Easier to locate and fix issues
+
+#### **3. Security Management**
+- **Layered Security**: Multiple authentication layers for different sensitivity levels
+- **Centralized Dependencies**: Shared security functions reduce duplication
+- **Flexible Authorization**: Easy to add new security requirements
+- **Audit Trail**: Clear separation of security concerns
+
+#### **4. Documentation and Discovery**
+- **Tag-Based Organization**: OpenAPI documentation logically organized
+- **Module Documentation**: Each module self-documents its purpose
+- **Clear API Structure**: URL prefixes and tags make API discoverable
+- **Example Integration**: Working examples demonstrate usage patterns
+
+### Key Learning Points
+
+This lesson demonstrates:
+- **Modular Architecture**: Organizing large applications into manageable modules
+- **Security Patterns**: Multi-layer authentication and authorization strategies
+- **Dependency Injection**: Shared dependencies and flexible configuration
+- **Package Organization**: Logical code organization for team development
+- **Production Patterns**: Scalable patterns for enterprise applications
+- **Testing Strategies**: Comprehensive testing approaches for modular applications
+
+The modular FastAPI architecture provides a solid foundation for building large, maintainable applications that can grow with your team and requirements while maintaining clean separation of concerns and robust security patterns!
